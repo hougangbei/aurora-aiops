@@ -28,6 +28,7 @@ var ErrSnapshotDenied = errors.New("snapshot denied for this resource kind")
 type Snapshot struct {
 	ID              string    `json:"id"`
 	IncidentID      string    `json:"incidentId"`
+	Action          string    `json:"action"`
 	APIVersion      string    `json:"apiVersion"`
 	Kind            string    `json:"kind"`
 	Namespace       string    `json:"namespace"`
@@ -44,6 +45,13 @@ var yamlSerializer = json.NewSerializerWithOptions(
 	scheme.Scheme,
 	json.SerializerOptions{Yaml: true, Pretty: false, Strict: false},
 )
+
+// SnapshotterFunc adapts a plain function to the Snapshotter interface.
+type SnapshotterFunc func(ctx context.Context, incidentID, namespace, resourceKind, resourceName string) (Snapshot, error)
+
+func (f SnapshotterFunc) Snapshot(ctx context.Context, incidentID, namespace, resourceKind, resourceName string) (Snapshot, error) {
+	return f(ctx, incidentID, namespace, resourceKind, resourceName)
+}
 
 // SnapshotResource fetches the resource through client-go and serializes it to
 // YAML. Secret objects are always refused; a snapshot failure must block any

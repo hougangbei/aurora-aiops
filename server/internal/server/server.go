@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/heihuzicity-tech/kubejojo/server/internal/aiops"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/audit"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/auth"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/buildinfo"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/cluster"
@@ -16,6 +17,7 @@ import (
 	"github.com/heihuzicity-tech/kubejojo/server/internal/evidence"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/kube"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/llm"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/remediation"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/service"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/store"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/web"
@@ -69,10 +71,11 @@ func Run(info buildinfo.Info) error {
 		return fmt.Errorf("initialize llm client: %w", err)
 	}
 	events := aiops.NewEventStore(db)
+	runRepo := aiops.NewRunRepository(db)
 	workflow := aiops.NewWorkflow(aiops.WorkflowOptions{
 		DB:        db,
 		Incidents: aiopsRepo,
-		Runs:      aiops.NewRunRepository(db),
+		Runs:      runRepo,
 		Evidence:  evidence.NewRepository(db),
 		Collector: evidence.NewKubernetesCollector(
 			evidence.KubernetesPodAPI{Kube: sharedClient.Kubernetes, Metrics: sharedClient.Metrics},
@@ -84,6 +87,25 @@ func Run(info buildinfo.Info) error {
 		Model:           cfg.LLM.Model,
 		Events:          events,
 	})
+
+	auditRepo := audit.NewRepository(db)
+	snapshotStore := remediation.NewSnapshotStore(db)
+	executor := remediation.NewExecutor(
+		&remediation.KubeExecutorClient{Client: sharedClient.Kubernetes, RolloutTimeout: cfg.Cluster.Timeout},
+		remediation.SnapshotterFunc(func(ctx context.Context, incidentID, ns, kind, name string) (remediation.Snapshot, error) {
+			return remediation.SnapshotResource(ctx, sharedClient.Kubernetes, incidentID, ns, kind, name)
+		}),
+		snapshotStore,
+		auditRepo,
+	)
+	remediationService := remediation.NewService(
+		aiopsService,
+		runRepo,
+		sharedClient.Kubernetes,
+		executor,
+		auditRepo,
+		snapshotStore,
+	)
 
 	updateService := service.NewUpdateService(info, cfg.Update, web.HasEmbeddedFrontend())
 	systemLockService := service.NewSystemOperationLockService()
@@ -97,6 +119,7 @@ func Run(info buildinfo.Info) error {
 		aiopsService,
 		workflow,
 		events,
+		remediationService,
 		info,
 	)
 	return router.Run(cfg.HTTPAddr)

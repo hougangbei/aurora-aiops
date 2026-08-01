@@ -13,6 +13,8 @@ import (
 
 	"github.com/heihuzicity-tech/kubejojo/server/internal/aiops"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/auth"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/policy"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/remediation"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/response"
 )
 
@@ -24,13 +26,14 @@ type createIncidentRequest struct {
 	ResourceName string `json:"resourceName"`
 }
 
-// aiopsRoutesDeps carries the services the aiops routes need. workflow and
-// events are optional: when absent the corresponding routes are not registered,
-// keeping the group usable for incident-only tests.
+// aiopsRoutesDeps carries the services the aiops routes need. workflow, events
+// and remediation are optional: when absent the corresponding routes are not
+// registered, keeping the group usable for incident-only tests.
 type aiopsRoutesDeps struct {
-	svc      *aiops.Service
-	workflow *aiops.Workflow
-	events   *aiops.EventStore
+	svc         *aiops.Service
+	workflow    *aiops.Workflow
+	events      *aiops.EventStore
+	remediation *remediation.Service
 }
 
 // sseHeartbeat keeps event-stream clients alive through idle periods.
@@ -55,6 +58,20 @@ func registerAIOpsRoutes(group *gin.RouterGroup, deps aiopsRoutesDeps) {
 		}
 		if deps.events != nil {
 			incidents.GET("/:id/events", handleIncidentEvents(deps.svc, deps.events))
+		}
+		if deps.remediation != nil {
+			incidents.POST("/:id/approve-remediation",
+				RequireRoles(auth.RoleOperator, auth.RoleAdmin),
+				handleApproveRemediation(deps.svc, deps.remediation))
+			incidents.POST("/:id/reject-remediation",
+				RequireRoles(auth.RoleOperator, auth.RoleAdmin),
+				handleRejectRemediation(deps.svc, deps.remediation))
+			incidents.POST("/:id/execute-remediation",
+				RequireRoles(auth.RoleAdmin),
+				handleExecuteRemediation(deps.svc, deps.remediation))
+			incidents.POST("/:id/rollback",
+				RequireRoles(auth.RoleAdmin),
+				handleRollbackRemediation(deps.svc, deps.remediation))
 		}
 	}
 }
@@ -279,4 +296,97 @@ func handleIncidentEvents(svc *aiops.Service, events *aiops.EventStore) gin.Hand
 // writeSSEEvent writes one SSE frame. Event data is pre-serialized JSON.
 func writeSSEEvent(w io.Writer, ev aiops.Event) {
 	fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", ev.ID, ev.Type, ev.Data)
+}
+
+type remediationReasonRequest struct {
+	Reason string `json:"reason"`
+}
+
+func handleApproveRemediation(svc *aiops.Service, remediationService *remediation.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		handleRemediationDecision(c, svc, remediationService, "approve")
+	}
+}
+
+func handleRejectRemediation(svc *aiops.Service, remediationService *remediation.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		handleRemediationDecision(c, svc, remediationService, "reject")
+	}
+}
+
+func handleRemediationDecision(c *gin.Context, svc *aiops.Service, remediationService *remediation.Service, kind string) {
+	id := c.Param("id")
+	actor, _ := ActorFromContext(c)
+	var req remediationReasonRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Reason == "" {
+		c.JSON(http.StatusBadRequest, response.Failure("INVALID_REMEDIATION_REQUEST", "缺少审批理由"))
+		return
+	}
+	var err error
+	if kind == "approve" {
+		err = remediationService.Approve(c.Request.Context(), id, actor.Username, req.Reason)
+	} else {
+		err = remediationService.Reject(c.Request.Context(), id, actor.Username, req.Reason)
+	}
+	if err != nil {
+		respondRemediationError(c, err)
+		return
+	}
+	incident, _ := svc.Get(c.Request.Context(), id)
+	c.JSON(http.StatusOK, response.Success(incident))
+}
+
+func handleExecuteRemediation(svc *aiops.Service, remediationService *remediation.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id := c.Param("id")
+		actor, _ := ActorFromContext(c)
+		if err := remediationService.Execute(c.Request.Context(), id, actor.Username); err != nil {
+			respondRemediationError(c, err)
+			return
+		}
+		incident, _ := svc.Get(c.Request.Context(), id)
+		c.JSON(http.StatusOK, response.Success(incident))
+	}
+}
+
+func handleRollbackRemediation(svc *aiops.Service, remediationService *remediation.Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id := c.Param("id")
+		actor, _ := ActorFromContext(c)
+		var req struct {
+			SnapshotID string `json:"snapshotId"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil || req.SnapshotID == "" {
+			c.JSON(http.StatusBadRequest, response.Failure("INVALID_ROLLBACK_REQUEST", "缺少 snapshotId"))
+			return
+		}
+		if err := remediationService.Rollback(c.Request.Context(), id, req.SnapshotID, actor.Username); err != nil {
+			respondRemediationError(c, err)
+			return
+		}
+		incident, _ := svc.Get(c.Request.Context(), id)
+		c.JSON(http.StatusOK, response.Success(incident))
+	}
+}
+
+func respondRemediationError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, aiops.ErrIncidentNotFound):
+		c.JSON(http.StatusNotFound, response.Failure("INCIDENT_NOT_FOUND", "事件不存在"))
+	case errors.Is(err, remediation.ErrInvalidStatus):
+		c.JSON(http.StatusBadRequest, response.Failure("REMEDIATION_NOT_ALLOWED", "当前状态不允许该操作"))
+	case errors.Is(err, remediation.ErrNotApproved):
+		c.JSON(http.StatusBadRequest, response.Failure("REMEDIATION_NOT_APPROVED", "事件尚未审批通过"))
+	case errors.Is(err, remediation.ErrNoExecutableActions):
+		c.JSON(http.StatusBadRequest, response.Failure("NO_EXECUTABLE_ACTIONS", "修复方案无可执行的结构化动作"))
+	case errors.Is(err, remediation.ErrAlreadyExecuted):
+		c.JSON(http.StatusConflict, response.Failure("ALREADY_EXECUTED", "该动作已执行，请人工确认后再处理"))
+	case errors.Is(err, policy.ErrActionDenied):
+		c.JSON(http.StatusForbidden, response.Failure("ACTION_DENIED", "动作被策略拒绝"))
+	case errors.Is(err, remediation.ErrSnapshotNotFound):
+		c.JSON(http.StatusNotFound, response.Failure("SNAPSHOT_NOT_FOUND", "快照不存在"))
+	default:
+		log.Printf("REMEDIATION_FAILED: %v", err)
+		c.JSON(http.StatusInternalServerError, response.Failure("REMEDIATION_FAILED", "执行失败"))
+	}
 }

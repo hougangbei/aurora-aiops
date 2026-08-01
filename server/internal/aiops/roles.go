@@ -46,10 +46,18 @@ type RootCauseCandidate struct {
 }
 
 // RemediationAction is one remediation step proposed by the remediation role.
+// Command is a display summary; the structured fields (Kind, Namespace,
+// ResourceKind, ResourceName, Parameters) are what the executor acts on after
+// policy validation. Structured fields may be absent for display-only actions.
 type RemediationAction struct {
-	Command string `json:"command"`
-	Reason  string `json:"reason"`
-	Risk    string `json:"risk"` // low | medium | high
+	Command      string            `json:"command"`
+	Reason       string            `json:"reason"`
+	Risk         string            `json:"risk"` // low | medium | high
+	Kind         string            `json:"kind,omitempty"`
+	Namespace    string            `json:"namespace,omitempty"`
+	ResourceKind string            `json:"resourceKind,omitempty"`
+	ResourceName string            `json:"resourceName,omitempty"`
+	Parameters   map[string]string `json:"parameters,omitempty"`
 }
 
 // RemediationOutput is the decision of the remediation role.
@@ -173,6 +181,14 @@ func DecodeRemediation(text string) (RemediationOutput, error) {
 		}
 		if !oneOf(a.Risk, "low", "medium", "high") {
 			return RemediationOutput{}, fmt.Errorf("%w: risk %q", ErrInvalidRoleOutput, a.Risk)
+		}
+		// 结构化字段可选：一旦给出 Kind，其余字段必须完整，否则执行阶段无法通过 policy。
+		if a.Kind != "" {
+			if strings.TrimSpace(a.Namespace) == "" ||
+				strings.TrimSpace(a.ResourceKind) == "" ||
+				strings.TrimSpace(a.ResourceName) == "" {
+				return RemediationOutput{}, fmt.Errorf("%w: structured action %q is incomplete", ErrInvalidRoleOutput, a.Kind)
+			}
 		}
 	}
 	return out, nil

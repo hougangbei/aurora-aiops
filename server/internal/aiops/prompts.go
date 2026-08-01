@@ -38,11 +38,14 @@ confidence must be between 0 and 1; every evidenceIds entry must exist in the bu
 `
 
 const remediationInstructions = `
-You are the REMEDIATION role. Propose concrete remediation actions. Each
-command must be a single parameterized action (for example a kubectl command)
-with no shell metacharacters: no pipes, redirects, chaining, or eval. Respond
-with JSON:
-{"actions":[{"command":string,"reason":string,"risk":"low"|"medium"|"high"}]}
+You are the REMEDIATION role. Propose concrete remediation actions. Each action
+must be STRUCTURED: "command" is a short display summary only; the executor
+acts on kind/namespace/resourceKind/resourceName/parameters after policy
+validation. Allowed kinds: "restart_deployment" (no parameters),
+"scale_deployment" (parameter replicas: "0"-"100"), "suspend_cronjob" (no
+parameters). Never use shell metacharacters, pipes, redirects, chaining, or
+eval. Respond with JSON:
+{"actions":[{"command":string,"reason":string,"risk":"low"|"medium"|"high","kind":string,"namespace":string,"resourceKind":string,"resourceName":string,"parameters":{string:string}}]}
 `
 
 const riskReviewInstructions = `

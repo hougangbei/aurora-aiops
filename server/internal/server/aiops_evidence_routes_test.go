@@ -12,16 +12,20 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 	metricsfake "k8s.io/metrics/pkg/client/clientset/versioned/fake"
 
 	"github.com/heihuzicity-tech/kubejojo/server/internal/aiops"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/audit"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/auth"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/evidence"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/kube"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/llm"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/remediation"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/service"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/store"
 )
@@ -56,7 +60,7 @@ func (f *routeFakeLLM) GenerateJSON(_ context.Context, req llm.Request) (llm.Res
 	case strings.Contains(content, "ROOT CAUSE role"):
 		return llm.Response{Text: `{"candidates":[{"summary":"oomkilled","confidence":0.9,"evidenceIds":["snapshot"],"verificationSteps":["check events"]}]}`, Model: "fake"}, nil
 	case strings.Contains(content, "REMEDIATION role"):
-		return llm.Response{Text: `{"actions":[{"command":"kubectl rollout restart deployment/api-0","reason":"r","risk":"low"}]}`, Model: "fake"}, nil
+		return llm.Response{Text: `{"actions":[{"command":"restart deployment api-0","reason":"restart after crash","risk":"medium","kind":"restart_deployment","namespace":"default","resourceKind":"Deployment","resourceName":"api-0"}]}`, Model: "fake"}, nil
 	case strings.Contains(content, "RISK REVIEW role"):
 		return llm.Response{Text: `{"riskLevel":"low","approved":true}`, Model: "fake"}, nil
 	}
@@ -97,18 +101,43 @@ func newAIOpsRouteRouter(t *testing.T) (*gin.Engine, *aiops.Service, *aiops.Work
 		Events:          events,
 	})
 
-	kubeClient := kubefake.NewSimpleClientset(&corev1.Node{})
+	replicas := int32(1)
+	kubeClient := kubefake.NewSimpleClientset(
+		&corev1.Node{},
+		&appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Name: "api-0", Namespace: "default"},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: &replicas,
+				Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "api-0"}},
+			},
+			Status: appsv1.DeploymentStatus{
+				Conditions: []appsv1.DeploymentCondition{{Type: appsv1.DeploymentAvailable, Status: "True"}},
+			},
+		},
+	)
 	clusterService := service.NewClusterService(&kube.Client{
 		Kubernetes: kubeClient,
 		Metrics:    metricsfake.NewSimpleClientset(),
 		RESTConfig: &rest.Config{},
 	})
 
+	auditRepo := audit.NewRepository(db)
+	snapshotStore := remediation.NewSnapshotStore(db)
+	executor := remediation.NewExecutor(
+		&remediation.KubeExecutorClient{Client: kubeClient, RolloutTimeout: time.Second},
+		remediation.SnapshotterFunc(func(ctx context.Context, incidentID, ns, kind, name string) (remediation.Snapshot, error) {
+			return remediation.SnapshotResource(ctx, kubeClient, incidentID, ns, kind, name)
+		}),
+		snapshotStore,
+		auditRepo,
+	)
+	remediationService := remediation.NewService(svc, aiops.NewRunRepository(db), kubeClient, executor, auditRepo, snapshotStore)
+
 	router := gin.New()
 	api := router.Group("/api/v1")
 	authorized := api.Group("/")
 	authorized.Use(RequireSession(authService, clusterService))
-	registerAIOpsRoutes(authorized, aiopsRoutesDeps{svc: svc, workflow: wf, events: events})
+	registerAIOpsRoutes(authorized, aiopsRoutesDeps{svc: svc, workflow: wf, events: events, remediation: remediationService})
 	return router, svc, wf, events, authService, llm
 }
 
@@ -367,5 +396,120 @@ func TestIncidentEventsSSEResume(t *testing.T) {
 	}
 	if !strings.Contains(resumed, "id: 2") {
 		t.Fatalf("resume missing event 2: %q", resumed)
+	}
+}
+
+func createIncidentViaRoute(t *testing.T, router *gin.Engine, authService *auth.Service, cookieUser string) (string, string) {
+	t.Helper()
+	body := `{"summary":"pod crash","severity":"critical","namespace":"default","resourceKind":"Pod","resourceName":"api-0"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/aiops/incidents", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Cookie", routeSessionCookie(t, authService, cookieUser, "correct-password"))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", w.Code, w.Body.String())
+	}
+	var env responseEnvelope
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	var incident struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(env.Data, &incident); err != nil {
+		t.Fatal(err)
+	}
+	return incident.ID, incident.Status
+}
+
+func TestRemediationRoutesRBAC(t *testing.T) {
+	router, _, _, _, authService, _ := newAIOpsRouteRouter(t)
+
+	// approve as viewer -> 403
+	id, _ := createIncidentViaRoute(t, router, authService, "admin")
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/aiops/incidents/"+id+"/approve-remediation", strings.NewReader(`{"reason":"looks safe"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Cookie", routeSessionCookie(t, authService, "viewer", "correct-password"))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("viewer approve status=%d want 403", w.Code)
+	}
+
+	// execute as operator -> 403 (admin only)
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/aiops/incidents/"+id+"/execute-remediation", nil)
+	req.Header.Set("Cookie", routeSessionCookie(t, authService, "operator", "correct-password"))
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("operator execute status=%d want 403", w.Code)
+	}
+
+	// rollback as operator -> 403
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/aiops/incidents/"+id+"/rollback", strings.NewReader(`{"snapshotId":"snap-x"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Cookie", routeSessionCookie(t, authService, "operator", "correct-password"))
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("operator rollback status=%d want 403", w.Code)
+	}
+
+	// rollback as admin with an unknown snapshot -> 404
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/aiops/incidents/"+id+"/rollback", strings.NewReader(`{"snapshotId":"snap-missing"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Cookie", routeSessionCookie(t, authService, "admin", "correct-password"))
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("admin rollback missing snapshot status=%d want 404", w.Code)
+	}
+}
+
+func TestApproveExecuteRemediationFlow(t *testing.T) {
+	router, svc, _, _, authService, _ := newAIOpsRouteRouter(t)
+	ctx := context.Background()
+
+	id, status := createIncidentViaRoute(t, router, authService, "admin")
+	if status != string(aiops.StatusAwaitingApproval) {
+		t.Fatalf("create status=%s want awaiting_approval", status)
+	}
+
+	// approve as operator -> 200
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/aiops/incidents/"+id+"/approve-remediation", strings.NewReader(`{"reason":"验证过脚本与变更范围，同意执行"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Cookie", routeSessionCookie(t, authService, "operator", "correct-password"))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("approve status=%d body=%s", w.Code, w.Body.String())
+	}
+	got, _ := svc.Get(ctx, id)
+	if got.Status != aiops.StatusApproved {
+		t.Fatalf("after approve status=%s want approved", got.Status)
+	}
+
+	// execute as admin -> 200, incident resolved
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/aiops/incidents/"+id+"/execute-remediation", nil)
+	req.Header.Set("Cookie", routeSessionCookie(t, authService, "admin", "correct-password"))
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("execute status=%d body=%s", w.Code, w.Body.String())
+	}
+	got, _ = svc.Get(ctx, id)
+	if got.Status != aiops.StatusResolved {
+		t.Fatalf("after execute status=%s want resolved", got.Status)
+	}
+
+	// second execute is blocked: incident no longer approved -> 400
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/aiops/incidents/"+id+"/execute-remediation", nil)
+	req.Header.Set("Cookie", routeSessionCookie(t, authService, "admin", "correct-password"))
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("second execute status=%d want 400", w.Code)
 	}
 }

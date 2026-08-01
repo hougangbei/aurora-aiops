@@ -24,6 +24,7 @@ import (
 	"github.com/heihuzicity-tech/kubejojo/server/internal/cluster"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/kube"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/ptyx"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/remediation"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/response"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/service"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/web"
@@ -76,6 +77,7 @@ func newRouter(
 	aiopsService *aiops.Service,
 	aiopsWorkflow *aiops.Workflow,
 	aiopsEvents *aiops.EventStore,
+	remediationService *remediation.Service,
 	info buildinfo.Info,
 ) *gin.Engine {
 	_ = sharedClient
@@ -240,9 +242,10 @@ func newRouter(
 			// aiops 与业务路由全部迁入 Session 受保护组；仅 login 匿名。
 			registerSessionAuthRoutes(authorized, authService)
 			registerAIOpsRoutes(authorized, aiopsRoutesDeps{
-				svc:      aiopsService,
-				workflow: aiopsWorkflow,
-				events:   aiopsEvents,
+				svc:         aiopsService,
+				workflow:    aiopsWorkflow,
+				events:      aiopsEvents,
+				remediation: remediationService,
 			})
 			registerClusterRoutes(authorized, probe, clusterService)
 

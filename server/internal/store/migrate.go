@@ -174,5 +174,30 @@ CREATE TABLE IF NOT EXISTS audit_records (
 		return err
 	}
 
+	_, err = db.Exec(`
+CREATE TABLE IF NOT EXISTS remediation_snapshots (
+  id TEXT PRIMARY KEY,
+  incident_id TEXT NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+  action TEXT NOT NULL,
+  api_version TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  namespace TEXT NOT NULL,
+  name TEXT NOT NULL,
+  uid TEXT NOT NULL,
+  resource_version TEXT NOT NULL,
+  yaml TEXT NOT NULL,
+  created_at TEXT NOT NULL
+)`)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`
+CREATE INDEX IF NOT EXISTS idx_remediation_snapshots_incident
+ON remediation_snapshots(incident_id, action)`)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }

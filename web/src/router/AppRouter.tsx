@@ -31,6 +31,13 @@ import { NetworkPolicyDetailsPage } from '../pages/NetworkPolicyDetailsPage';
 import { NamespacesPage } from '../pages/NamespacesPage';
 import { NodesPage } from '../pages/NodesPage';
 import { OverviewPage } from '../pages/OverviewPage';
+import { AIOpsApprovalsPage } from '../pages/AIOpsApprovalsPage';
+import { AIOpsAuditPage } from '../pages/AIOpsAuditPage';
+import { AIOpsExperimentsPage } from '../pages/AIOpsExperimentsPage';
+import { AIOpsOverviewPage } from '../pages/AIOpsOverviewPage';
+import { AIOpsSettingsPage } from '../pages/AIOpsSettingsPage';
+import { IncidentDetailsPage } from '../pages/IncidentDetailsPage';
+import { IncidentsPage } from '../pages/IncidentsPage';
 import { PersistentVolumeClaimDetailsPage } from '../pages/PersistentVolumeClaimDetailsPage';
 import { PersistentVolumeClaimsPage } from '../pages/PersistentVolumeClaimsPage';
 import { PersistentVolumeDetailsPage } from '../pages/PersistentVolumeDetailsPage';
@@ -167,6 +174,13 @@ function ProtectedRoutes() {
         <Route path="/storage/storageclasses" element={<StorageClassesPage />} />
         <Route path="/storage/storageclasses/:name" element={<StorageClassDetailsPage />} />
         <Route path="/topology" element={<TopologyPage />} />
+        <Route path="/aiops/overview" element={<AIOpsOverviewPage />} />
+        <Route path="/aiops/incidents" element={<IncidentsPage />} />
+        <Route path="/aiops/incidents/:id" element={<IncidentDetailsPage />} />
+        <Route path="/aiops/approvals" element={<AIOpsApprovalsPage />} />
+        <Route path="/aiops/experiments" element={<AIOpsExperimentsPage />} />
+        <Route path="/aiops/settings" element={<AIOpsSettingsPage />} />
+        <Route path="/aiops/audit" element={<AIOpsAuditPage />} />
         <Route path="/system/settings" element={<Navigate to="/system/updates" replace />} />
         <Route path="/system/updates" element={<SystemUpdatesPage />} />
 

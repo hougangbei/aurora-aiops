@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubejojo
+  namespace: kubejojo
+  labels:
+    app.kubernetes.io/name: kubejojo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kubejojo
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kubejojo
+    spec:
+      serviceAccountName: kubejojo-readonly
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+      - name: kubejojo
+        image: kubejojo:local
+        imagePullPolicy: IfNotPresent
+        args: []
+        env:
+        - name: HTTP_ADDR
+          value: ":8080"
+        # 共享 kubeconfig 挂载为只读，后端用它访问集群。
+        - name: KUBEJOJO_KUBECONFIG
+          value: /etc/kubejojo/kubeconfig
+        - name: KUBEJOJO_AIOPS_DB
+          value: /var/lib/kubejojo/kubejojo.db
+        # LLM API Key 只通过 Secret 引用，样例文件不放真实值。
+        - name: KUBEJOJO_LLM_BASE_URL
+          value: ""
+        - name: KUBEJOJO_LLM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: kubejojo-secrets
+              key: llm-api-key
+              optional: true
+        - name: KUBEJOJO_LLM_MODEL
+          value: ""
+        ports:
+        - containerPort: 8080
+        securityContext:
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/kubejojo
+        - name: kubeconfig
+          mountPath: /etc/kubejojo
+          readOnly: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: "1"
+            memory: 512Mi
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: kubejojo-data
+      - name: kubeconfig
+        secret:
+          secretName: kubejojo-kubeconfig

@@ -25,6 +25,12 @@ ReadWritePaths=/opt/kubejojo
 # Adjust these values for your target environment.
 Environment=HTTP_ADDR=:8080
 Environment=KUBEJOJO_KUBECONFIG=/opt/kubejojo/config/kubeconfig
+Environment=KUBEJOJO_AIOPS_DB=/opt/kubejojo/data/kubejojo.db
+# LLM 模型端点：未配置时只运行确定性 triage/collector。
+# Environment=KUBEJOJO_LLM_BASE_URL=https://api.example.com/v1
+# Environment=KUBEJOJO_LLM_API_KEY=change-me
+# Environment=KUBEJOJO_LLM_MODEL=model-name
+# Environment=KUBEJOJO_LLM_API_STYLE=chat_completions
 # Environment=KUBEJOJO_UPDATE_ENABLED=true
 # Environment=KUBEJOJO_UPDATE_ALLOW_PRERELEASES=true
 # Environment=KUBEJOJO_UPDATE_REPOSITORY=heihuzicity-tech/kubejojo

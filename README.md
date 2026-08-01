@@ -166,6 +166,10 @@ kubectl create token kubejojo-dev -n kube-system
 ./scripts/build-release.sh
 ```
 
+release 构建会先跑 `npm test`、`go vet ./...`、`go test ./...`，任一失败立即退出；前端资源内嵌进单一 Go 二进制，无 Node 即可独立启动。
+
+容器/集群部署清单见 `deploy/kubernetes/`（只读 RBAC 默认安装，可执行 RBAC 为样例；容器只读 rootfs、非 root、DB 目录 volume 持久化，LLM API Key 走 Secret env）。Systemd 服务模板 `deploy/kubejojo.service` 已带 AIOps DB 与模型端点环境变量占位。
+
 构建指定平台 release：
 
 ```bash

@@ -51,6 +51,19 @@ if [[ "${SKIP_NPM_INSTALL:-0}" != "1" ]]; then
   )
 fi
 
+# 门禁：前端测试、后端 vet + 测试任一失败立即退出，不产出 release。
+echo "==> Verifying frontend tests"
+(
+  cd "$WEB_DIR"
+  npm test
+)
+echo "==> Verifying backend vet + tests"
+(
+  cd "$SERVER_DIR"
+  go vet ./...
+  go test ./...
+)
+
 echo "==> Building frontend"
 rm -rf "$ASSET_OUT_DIR"
 mkdir -p "$ASSET_OUT_DIR"

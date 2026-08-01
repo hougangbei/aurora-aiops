@@ -50,13 +50,15 @@ YAML
     echo "injected dns-failure scenario"
     ;;
   verify)
-    phase=$(run_probe "$SCENARIO" "dns-probe" "busybox:1.36" sh -c "nslookup kubernetes.default.svc.cluster.local || exit 1")
-    if [ "$phase" = "Failed" ]; then
-      echo "OK: DNS resolution denied (probe Failed)"
-      exit 0
+    # nslookup 必须在策略覆盖的 dns-app pod 内执行，独立探针不受 NetworkPolicy 约束。
+    kubectl -n "$NAMESPACE" wait --for=condition=Ready --timeout=90s pod -l app=dns-app >/dev/null 2>&1 || { echo "dns-app never ready"; exit 1; }
+    pod="$(kubectl -n "$NAMESPACE" get pod -l app=dns-app -o jsonpath='{.items[0].metadata.name}')"
+    if kubectl -n "$NAMESPACE" exec "$pod" -- nslookup kubernetes.default.svc.cluster.local >/dev/null 2>&1; then
+      echo "waiting: DNS still works"
+      exit 1
     fi
-    echo "waiting: probe phase=$phase (DNS still works)"
-    exit 1
+    echo "OK: DNS resolution denied"
+    exit 0
     ;;
   cleanup)
     cleanup_scenario "$SCENARIO"

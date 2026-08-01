@@ -3,53 +3,47 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AxiosError } from 'axios';
 import { useNavigate } from 'react-router-dom';
 
-import { loginWithToken } from '../services/cluster';
+import { loginWithPassword } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 
 type LoginFormValues = {
-  token: string;
+  username: string;
+  password: string;
 };
 
 export function LoginPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const setToken = useAppStore((state) => state.setToken);
-  const setNamespace = useAppStore((state) => state.setNamespace);
-  const setUserName = useAppStore((state) => state.setUserName);
-  const setSessionMode = useAppStore((state) => state.setSessionMode);
+  const setSession = useAppStore((state) => state.setSession);
+  const enterDemo = useAppStore((state) => state.enterDemo);
 
   const loginMutation = useMutation({
-    mutationFn: loginWithToken,
-    onSuccess: (result, token) => {
+    mutationFn: ({ username, password }: LoginFormValues) =>
+      loginWithPassword(username, password),
+    onSuccess: (user) => {
       queryClient.clear();
-      setToken(token);
-      setUserName(result.name);
-      setNamespace(result.defaultNamespace);
-      setSessionMode('token');
+      setSession(user);
       navigate('/cluster/overview', { replace: true });
-      void message.success('ServiceAccount Token 校验通过，已接入真实集群');
+      void message.success('已登录并接入集群控制台');
     },
   });
 
-  const handleFinish = ({ token }: LoginFormValues) => {
-    loginMutation.mutate(token);
+  const handleFinish = (values: LoginFormValues) => {
+    loginMutation.mutate(values);
   };
 
   const handleDemoEnter = () => {
     queryClient.clear();
-    setToken('demo-token');
-    setUserName('演示用户');
-    setNamespace('default');
-    setSessionMode('demo');
+    enterDemo();
     navigate('/cluster/overview', { replace: true });
   };
 
   const errorMessage =
     loginMutation.error instanceof AxiosError
-      ? loginMutation.error.response?.data?.message ?? 'Token 校验失败，请检查权限或集群连通性'
+      ? loginMutation.error.response?.data?.message ?? '登录失败，请检查账号密码'
       : loginMutation.error
-        ? 'Token 校验失败，请稍后重试'
+        ? '登录失败，请稍后重试'
         : '';
 
   return (
@@ -84,12 +78,12 @@ export function LoginPage() {
 
           <section className="px-8 py-8 lg:px-10">
             <div className="mb-7">
-              <Typography.Title level={2}>接入 Kubernetes 集群</Typography.Title>
+              <Typography.Title level={2}>登录平台</Typography.Title>
               <Typography.Paragraph type="secondary" className="!mb-0">
-                当前按 Headlamp 官方推荐实践，使用 ServiceAccount Bearer Token 直接接入单集群。
+                使用平台账号密码登录，登录后自动接入已配置的 Kubernetes 集群。
               </Typography.Paragraph>
               <Typography.Paragraph type="secondary" className="!mt-3 !mb-0">
-                当前仅查看前端效果时，可以直接使用演示模式进入。
+                仅查看前端效果时，可以直接使用演示模式进入。
               </Typography.Paragraph>
             </div>
             {errorMessage ? (
@@ -102,11 +96,21 @@ export function LoginPage() {
             ) : null}
             <Form layout="vertical" onFinish={handleFinish}>
               <Form.Item
-                label="ServiceAccount Token"
-                name="token"
-                rules={[{ required: true, message: '请输入 Bearer Token' }]}
+                label="用户名"
+                name="username"
+                rules={[{ required: true, message: '请输入用户名' }]}
               >
-                <Input.Password placeholder="请输入 Kubernetes ServiceAccount Bearer Token" />
+                <Input placeholder="请输入平台用户名" autoComplete="username" />
+              </Form.Item>
+              <Form.Item
+                label="密码"
+                name="password"
+                rules={[{ required: true, message: '请输入密码' }]}
+              >
+                <Input.Password
+                  placeholder="请输入密码"
+                  autoComplete="current-password"
+                />
               </Form.Item>
               <Space direction="vertical" size="middle" className="w-full">
                 <Button
@@ -116,7 +120,7 @@ export function LoginPage() {
                   block
                   loading={loginMutation.isPending}
                 >
-                  校验并接入
+                  登录
                 </Button>
                 <Button
                   size="large"

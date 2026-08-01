@@ -110,19 +110,16 @@ function readArray(record: UnknownRecord | undefined, keys: string[]) {
 }
 
 export type AuthMe = {
-  name: string;
-  authMode: string;
-  currentContext: string;
-  kubeconfigPath: string;
+  id: string;
+  username: string;
+  role: string;
 };
 
-export type TokenLoginResult = {
-  name: string;
-  authMode: string;
-  currentContext: string;
-  kubeconfigPath: string;
-  namespaces: string[];
-  defaultNamespace: string;
+export type LoginResult = {
+  id: string;
+  username: string;
+  role: string;
+  expiresAt: string;
 };
 
 export type OverviewSummary = {
@@ -1080,16 +1077,16 @@ export async function getAuthMe() {
   return data.data;
 }
 
-export async function loginWithToken(token: string) {
-  const { data } = await http.post<Envelope<TokenLoginResult>>(
-    '/auth/login',
-    { token },
-    {
-      headers: {
-        'X-Skip-Auth': 'true',
-      },
-    },
-  );
+export async function loginWithPassword(username: string, password: string) {
+  const { data } = await http.post<Envelope<LoginResult>>('/auth/login', {
+    username,
+    password,
+  });
+  return data.data;
+}
+
+export async function logout() {
+  const { data } = await http.post<Envelope<{ ok: boolean }>>('/auth/logout');
   return data.data;
 }
 
@@ -1207,15 +1204,14 @@ export async function createManifest(content: string) {
 }
 
 export function buildPodExecWebSocketUrl(
-  token: string,
   namespace: string,
   name: string,
   container: string,
   command: string,
 ) {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  // WebSocket 与 HTTP 同源，携带 HttpOnly Session Cookie，不传任何 token。
   const query = new URLSearchParams({
-    token,
     container,
     command,
   });

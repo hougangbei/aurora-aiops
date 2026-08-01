@@ -65,7 +65,6 @@ export function PodDetailsPage() {
   const navigate = useNavigate();
   const params = useParams();
   const sessionMode = useAppStore((state) => state.sessionMode);
-  const token = useAppStore((state) => state.token);
   const currentNamespace = useAppStore((state) => state.namespace);
 
   const namespace = decodeRouteParam(params.namespace);
@@ -545,7 +544,6 @@ export function PodDetailsPage() {
                   <PodExecTerminalPanel
                     active={activeTab === 'terminal'}
                     target={podItem}
-                    token={useDemoData ? '' : token}
                   />
                 </SectionCard>
               ),

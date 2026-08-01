@@ -8,7 +8,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { PageErrorBoundary } from '../app/PageErrorBoundary';
 import { BrandLogo } from '../components/brand/BrandLogo';
 import { VersionBadge } from '../components/system/VersionBadge';
-import { getAuthMe, getNamespaces } from '../services/cluster';
+import { getAuthMe, getNamespaces, logout } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 import { findNavigationItem, navigationSections } from './navigation';
 
@@ -143,31 +143,31 @@ export function AppLayout({ children }: PropsWithChildren) {
   const screens = Grid.useBreakpoint();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const token = useAppStore((state) => state.token);
+  const authenticated = useAppStore((state) => state.authenticated);
   const namespace = useAppStore((state) => state.namespace);
   const setNamespace = useAppStore((state) => state.setNamespace);
   const userName = useAppStore((state) => state.userName);
   const setUserName = useAppStore((state) => state.setUserName);
   const sessionMode = useAppStore((state) => state.sessionMode);
-  const clearToken = useAppStore((state) => state.clearToken);
+  const clearSession = useAppStore((state) => state.clearSession);
 
   const authQuery = useQuery({
     queryKey: ['auth-me'],
     queryFn: getAuthMe,
-    enabled: sessionMode === 'token' && Boolean(token),
+    enabled: sessionMode === 'token' && authenticated,
   });
 
   const namespacesQuery = useQuery({
     queryKey: ['namespaces'],
     queryFn: getNamespaces,
-    enabled: sessionMode === 'token' && Boolean(token),
+    enabled: sessionMode === 'token' && authenticated,
   });
 
   useEffect(() => {
-    if (authQuery.data?.name) {
-      setUserName(authQuery.data.name);
+    if (authQuery.data?.username) {
+      setUserName(authQuery.data.username);
     }
-  }, [authQuery.data?.name, setUserName]);
+  }, [authQuery.data?.username, setUserName]);
 
   useEffect(() => {
     const authStatus =
@@ -182,12 +182,12 @@ export function AppLayout({ children }: PropsWithChildren) {
       [authStatus, namespacesStatus].some((status) => status === 401 || status === 403)
     ) {
       queryClient.clear();
-      clearToken();
+      clearSession();
       navigate('/login', { replace: true });
     }
   }, [
     authQuery.error,
-    clearToken,
+    clearSession,
     navigate,
     namespacesQuery.error,
     queryClient,
@@ -227,8 +227,10 @@ export function AppLayout({ children }: PropsWithChildren) {
 
   const handleLogout = () => {
     queryClient.clear();
-    clearToken();
-    navigate('/login', { replace: true });
+    void logout().finally(() => {
+      clearSession();
+      navigate('/login', { replace: true });
+    });
   };
 
   return (

@@ -55,11 +55,7 @@ export type UpdateActionResult = {
 };
 
 export async function getBuildInfo() {
-  const { data } = await http.get<Envelope<BuildInfo>>('/system/build-info', {
-    headers: {
-      'X-Skip-Auth': 'true',
-    },
-  });
+  const { data } = await http.get<Envelope<BuildInfo>>('/system/build-info');
   return data.data;
 }
 

@@ -41,7 +41,6 @@ export function PodsPage() {
   const navigate = useNavigate();
   const sessionMode = useAppStore((state) => state.sessionMode);
   const currentNamespace = useAppStore((state) => state.namespace);
-  const token = useAppStore((state) => state.token);
   const [logTarget, setLogTarget] = useState<PodItem>();
   const [logContainer, setLogContainer] = useState<string>();
   const [execTarget, setExecTarget] = useState<PodItem>();
@@ -344,7 +343,6 @@ export function PodsPage() {
       <PodExecTerminalModal
         open={Boolean(execTarget)}
         target={execTarget}
-        token={token}
         onClose={() => setExecTarget(undefined)}
       />
 

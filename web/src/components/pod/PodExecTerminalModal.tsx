@@ -22,14 +22,12 @@ type ExecSocketMessage =
 type PodExecTerminalPanelProps = {
   active: boolean;
   target?: PodItem;
-  token: string;
   className?: string;
 };
 
 type PodExecTerminalModalProps = {
   open: boolean;
   target?: PodItem;
-  token: string;
   onClose: () => void;
 };
 
@@ -55,7 +53,6 @@ function sendSocketMessage(socket: WebSocket, message: ExecSocketMessage) {
 export function PodExecTerminalPanel({
   active,
   target,
-  token,
   className,
 }: PodExecTerminalPanelProps) {
   const [execContainer, setExecContainer] = useState<string>();
@@ -79,7 +76,7 @@ export function PodExecTerminalPanel({
   }, [active, target]);
 
   useEffect(() => {
-    if (!active || !target || !token || !execContainer || !terminalHostRef.current) {
+    if (!active || !target || !execContainer || !terminalHostRef.current) {
       return;
     }
 
@@ -101,7 +98,7 @@ export function PodExecTerminalPanel({
     });
     const fitAddon = new FitAddon();
     const socket = new WebSocket(
-      buildPodExecWebSocketUrl(token, target.namespace, target.name, execContainer, execCommand),
+      buildPodExecWebSocketUrl(target.namespace, target.name, execContainer, execCommand),
     );
 
     terminalRef.current = terminal;
@@ -182,7 +179,7 @@ export function PodExecTerminalPanel({
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [active, execCommand, execContainer, execSessionKey, target, token]);
+  }, [active, execCommand, execContainer, execSessionKey, target]);
 
   const containerOptions =
     target?.containers.map((item) => ({
@@ -198,17 +195,6 @@ export function PodExecTerminalPanel({
     );
   }
 
-  if (!token) {
-    return (
-      <section className={className ?? 'space-y-4'}>
-        <Alert
-          type="info"
-          showIcon
-          message="Terminal requires live cluster access. Demo mode does not open exec sessions."
-        />
-      </section>
-    );
-  }
 
   return (
     <section className={className ?? 'space-y-4'}>
@@ -276,7 +262,6 @@ export function PodExecTerminalPanel({
 export function PodExecTerminalModal({
   open,
   target,
-  token,
   onClose,
 }: PodExecTerminalModalProps) {
   return (
@@ -288,7 +273,7 @@ export function PodExecTerminalModal({
       width={980}
       destroyOnHidden
     >
-      <PodExecTerminalPanel active={open} target={target} token={token} />
+      <PodExecTerminalPanel active={open} target={target} />
     </Modal>
   );
 }

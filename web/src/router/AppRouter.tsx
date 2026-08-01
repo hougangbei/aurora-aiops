@@ -66,9 +66,9 @@ import { SystemUpdatesPage } from '../pages/SystemUpdatesPage';
 const placeholderItems = navigationItems.filter((item) => !item.implemented);
 
 function ProtectedRoutes() {
-  const token = useAppStore((state) => state.token);
+  const authenticated = useAppStore((state) => state.authenticated);
 
-  if (!token) {
+  if (!authenticated) {
     return <Navigate to="/login" replace />;
   }
 

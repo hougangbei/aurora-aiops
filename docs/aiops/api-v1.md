@@ -1,6 +1,6 @@
 # AIOps API v1
 
-本页记录 kubejojo Go 后端已实现的 `/api/v1` 接口。当前阶段（计划 01 + 01A）落地了 Incident 的创建与查询、平台账号登录、共享集群连接状态与节点发现；审批、执行、工具调用、ChatOps、集成配置在后续计划中实现。
+本页记录 kubejojo Go 后端已实现的 `/api/v1` 接口。当前阶段（计划 01 + 01A + 02）落地了 Incident 的创建与查询、平台账号登录、共享集群连接状态与节点发现、证据链与多智能体诊断工作流（Evidence / AgentRun / Reanalyze / SSE 事件流）；审批、执行、工具调用、ChatOps、集成配置在后续计划中实现。
 
 所有接口返回统一信封 `{code, message, data}`：
 
@@ -75,7 +75,9 @@ Incident 状态迁移是严格白名单，非允许迁移返回 `INVALID_INCIDEN
 | `executing` | `resolved`, `failed` |
 | `resolved` / `rejected` / `failed` | （终态） |
 
-当前阶段状态流转逻辑已实现（`internal/aiops/state_machine.go`、`service.Advance`），但 HTTP 层暂未暴露状态迁移接口，由后续计划接入。
+创建 Incident 会自动触发五阶段诊断工作流：`triage → collector → root_cause → remediation → risk_review`，状态随之推进 `received → triaging → collecting → analyzing → proposing → awaiting_approval`。每个角色记录一条 `AgentRun`；角色输出校验失败或模型不可用时 Incident 进入 `failed` 终态且**不会执行任何动作**。模型未配置（`KUBEJOJO_LLM_BASE_URL` 为空）时仅运行确定性的 triage/collector，根因及后续角色记录为 `skipped` / `model_unavailable`，Incident 停在 `collecting`。
+
+每个 AgentRun 保存 role、attempt、status、summary、输出 JSON、模型、Token 用量、起止时间与错误。每步开始/结束都会先持久化再广播一条 Incident 事件（`run_started` / `run_completed` / `incident_updated`），供 SSE 消费。
 
 ## 创建 Incident
 
@@ -93,10 +95,62 @@ Incident 状态迁移是严格白名单，非允许迁移返回 `INVALID_INCIDEN
 }
 ```
 
-- 成功：HTTP 201，`data` 为完整 Incident（含服务端生成的 `id` 与初始 `status = "received"`）。
+- 成功：HTTP 201，`data` 为完整 Incident。创建后同步运行诊断工作流，返回的 `data` 是**工作流结束后的最新 Incident 状态**（有模型时通常为 `awaiting_approval`，无模型时为 `collecting`，角色输出非法时为 `failed`）。
 - 失败：
   - 请求体不是合法 JSON、或字段类型不匹配 → 400 `INVALID_INCIDENT_REQUEST`。
   - `summary` 为空、`severity` 非法、`namespace` / `resourceKind` / `resourceName` 任一为空 → 400 `INVALID_INCIDENT_REQUEST`。
+
+## 查询 Incident 证据
+
+`GET /api/v1/aiops/incidents/:id/evidence`
+
+- 需要有效 Session（任意角色）。
+- 成功：HTTP 200，`data` 为 `{nodes, edges}`。`nodes` 是证据 DAG 的顶点（`kind` 取值 `snapshot` / `event` / `log` / `metric` / `agent` / `system`），`edges` 是支持关系边。Pod 证据由共享 client-go 采集：资源快照、关联事件、`TailLines=200` 尾部日志（单条 4 KiB 封顶）、Pod Metrics（可选能力）。
+- 失败：ID 不存在 → 404 `INCIDENT_NOT_FOUND`。
+- 安全：证据已脱敏——Pod 快照不含 env 值 / Secret 引用 / Token 路径；日志与事件消息中的疑似密钥行以 `[REDACTED]` 掩码。
+
+## 查询诊断记录
+
+`GET /api/v1/aiops/incidents/:id/runs`
+
+- 需要有效 Session（任意角色）。
+- 成功：HTTP 200，`data` 为 `{runs: [...]}`，每个 `run` 是 `{id, incidentId, role, attempt, status, summary, output, model, promptTokens, completionTokens, totalTokens, error, startedAt, completedAt}`。
+- 失败：ID 不存在 → 404 `INCIDENT_NOT_FOUND`。
+
+## 重新诊断
+
+`POST /api/v1/aiops/incidents/:id/reanalyze`
+
+- 需要 `operator` / `admin` 角色（viewer → 403 `FORBIDDEN`，未登录 → 401 `UNAUTHORIZED`）。
+- 仅允许 `failed` / `rejected` / `resolved` 终态；其他状态 → 400 `REANALYZE_NOT_ALLOWED`。
+- 语义：清空该 Incident 的既有证据，状态重置为 `received`，从头重跑五阶段工作流；历史 AgentRun 保留（新 run 的 `attempt` 递增）。
+- 成功：HTTP 200，`data` 为工作流结束后的最新 Incident。
+- 失败：ID 不存在 → 404 `INCIDENT_NOT_FOUND`；同一 Incident 并发触发 → 409 `WORKFLOW_BUSY`。
+
+## Incident 事件流（SSE）
+
+`GET /api/v1/aiops/incidents/:id/events?lastEventId=<int>`
+
+- 需要有效 Session（任意角色）。
+- 返回 `text/event-stream`。先重放 `id > lastEventId` 的已持久化事件（供断线恢复），再订阅实时事件；每 15 秒发送一条 `: heartbeat` 心跳，客户端断开即释放订阅。
+- 每个事件帧：`id: <单调递增>`, `event: run_started|run_completed|incident_updated|reanalyze_started`, `data: <JSON>`。
+- 慢客户端不阻塞工作流：事件**先持久化再广播**，订阅缓冲满时丢弃实时帧，历史仍可经 `lastEventId` 重放。
+
+## 通用错误码
+
+| HTTP | code | 说明 |
+| --- | --- | --- |
+| 400 | `INVALID_INCIDENT_REQUEST` | 请求体格式不正确，或业务参数校验失败（见下方各接口） |
+| 400 | `REANALYZE_NOT_ALLOWED` | Incident 不在 `failed` / `rejected` / `resolved`，不可重新诊断 |
+| 403 | `FORBIDDEN` | 当前角色无权执行该操作（如 viewer 调用 reanalyze） |
+| 404 | `INCIDENT_NOT_FOUND` | 指定 ID 的 Incident 不存在 |
+| 409 | `WORKFLOW_BUSY` | 同一 Incident 已有诊断在运行 |
+| 500 | `CREATE_INCIDENT_FAILED` | 创建失败（不向客户端泄漏内部错误） |
+| 500 | `LIST_INCIDENTS_FAILED` | 列表查询失败 |
+| 500 | `GET_INCIDENT_FAILED` | 单条查询失败 |
+| 500 | `GET_EVIDENCE_FAILED` | 证据查询失败 |
+| 500 | `GET_RUNS_FAILED` | 诊断记录查询失败 |
+| 500 | `REANALYZE_FAILED` | 重新诊断失败 |
 
 ## 查询 Incident 列表
 

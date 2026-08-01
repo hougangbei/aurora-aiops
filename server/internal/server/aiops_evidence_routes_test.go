@@ -174,6 +174,37 @@ func TestEvidenceRouteReturnsNodesAndEdges(t *testing.T) {
 	}
 }
 
+func TestCreateIncidentAutoRunsWorkflow(t *testing.T) {
+	router, _, _, _, authService, _ := newAIOpsRouteRouter(t)
+
+	body := `{"summary":"Pod crash loop","severity":"critical","namespace":"default","resourceKind":"Pod","resourceName":"api-0"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/aiops/incidents", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Cookie", routeSessionCookie(t, authService, "admin", "correct-password"))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var env responseEnvelope
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	var incident struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(env.Data, &incident); err != nil {
+		t.Fatal(err)
+	}
+	// The diagnostic workflow ran as part of creation: the incident left the
+	// received state and collected evidence.
+	if incident.Status != string(aiops.StatusAwaitingApproval) {
+		t.Fatalf("create returned status=%s want awaiting_approval", incident.Status)
+	}
+}
+
 func TestEvidenceRouteNotFound(t *testing.T) {
 	router, _, _, _, authService, _ := newAIOpsRouteRouter(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/aiops/incidents/inc-missing/evidence", nil)
@@ -227,7 +258,8 @@ func TestReanalyzeRouteRoles(t *testing.T) {
 	ctx := context.Background()
 	inc := mustRouteIncident(t, svc)
 
-	// Drive the incident to a terminal failed state first.
+	// Drive the incident to a terminal failed state first: the triage role
+	// returns invalid JSON, so the workflow records a failure and stops.
 	llm.invalidTriage = true
 	if err := wf.Run(ctx, inc.ID); err != nil {
 		t.Fatal(err)

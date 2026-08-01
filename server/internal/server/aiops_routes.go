@@ -43,7 +43,7 @@ const sseHeartbeat = 15 * time.Second
 func registerAIOpsRoutes(group *gin.RouterGroup, deps aiopsRoutesDeps) {
 	incidents := group.Group("/aiops/incidents")
 	{
-		incidents.POST("", handleCreateIncident(deps.svc))
+		incidents.POST("", handleCreateIncident(deps.svc, deps.workflow))
 		incidents.GET("", handleListIncidents(deps.svc))
 		incidents.GET("/:id", handleGetIncident(deps.svc))
 		if deps.workflow != nil {
@@ -59,7 +59,7 @@ func registerAIOpsRoutes(group *gin.RouterGroup, deps aiopsRoutesDeps) {
 	}
 }
 
-func handleCreateIncident(svc *aiops.Service) gin.HandlerFunc {
+func handleCreateIncident(svc *aiops.Service, wf *aiops.Workflow) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req createIncidentRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -67,7 +67,8 @@ func handleCreateIncident(svc *aiops.Service) gin.HandlerFunc {
 			return
 		}
 
-		incident, err := svc.Create(c.Request.Context(), aiops.CreateIncidentInput{
+		ctx := c.Request.Context()
+		incident, err := svc.Create(ctx, aiops.CreateIncidentInput{
 			Summary:      req.Summary,
 			Severity:     req.Severity,
 			Namespace:    req.Namespace,
@@ -82,6 +83,18 @@ func handleCreateIncident(svc *aiops.Service) gin.HandlerFunc {
 			log.Printf("CREATE_INCIDENT_FAILED: %v", err)
 			c.JSON(http.StatusInternalServerError, response.Failure("CREATE_INCIDENT_FAILED", "创建事件失败"))
 			return
+		}
+
+		// Creating an incident kicks off the diagnostic workflow. Role failures
+		// are recorded on the incident itself; only infrastructure errors are
+		// logged here.
+		if wf != nil {
+			if runErr := wf.Run(ctx, incident.ID); runErr != nil && !errors.Is(runErr, aiops.ErrWorkflowLocked) {
+				log.Printf("INCIDENT_RUN_FAILED: %v", runErr)
+			}
+			if updated, getErr := svc.Get(ctx, incident.ID); getErr == nil {
+				incident = updated
+			}
 		}
 
 		c.JSON(http.StatusCreated, response.Success(incident))

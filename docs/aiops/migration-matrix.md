@@ -9,8 +9,8 @@
 - **Go 目标命名空间统一为 `/api/v1`**；qd 的 `/api/...` 只作为行为参照，路径不等同于最终 Go 路径。
 - kubejojo 自身已具备的资源域（节点、Pod、工作负载、网络、存储、RBAC 等）**不迁移 qd 的同名接口**，保留 kubejojo 既有实现；qd 中与 kubejojo 功能重叠的接口标 `intentionally-dropped`。
 - 计划 01 已完成：Incident 持久化、状态机与三条 incidents 接口。
-- 计划 01A 将覆盖：账号登录（Session）、集群连接与共享 kubeconfig。
-- 计划 02 将覆盖：证据链、多智能体诊断、模型调用、工具调用记录。
+- 计划 01A 已完成：账号登录（Session）、集群连接与共享 kubeconfig。
+- 计划 02 已完成：证据链（Evidence DAG / Context Bundle / K8s 采集）、五角色多智能体诊断工作流、模型调用（OpenAI-compatible）、Evidence / Runs / Reanalyze / SSE API；工具调用记录留待后续。
 - 计划 04 将覆盖：审批、快照、故障实验。
 
 ## 认证 / 账号
@@ -79,7 +79,7 @@
 | `POST /api/aiops/webhooks/alerts` | `implemented-in-go` | 告警进入 → `POST /api/v1/aiops/incidents` |
 | `GET /api/aiops/incidents/:id` | `implemented-in-go` | `GET /api/v1/aiops/incidents/:id` |
 | `GET /api/aiops/incidents/:id/tool-calls` | `reference` | 计划 02 工具调用记录 |
-| `POST /api/aiops/incidents/:id/reanalyze` | `reference` | 计划 02 重诊断 |
+| `POST /api/aiops/incidents/:id/reanalyze` | `implemented-in-go` | `POST /api/v1/aiops/incidents/:id/reanalyze`，限 `failed`/`rejected`/`resolved`，需 operator/admin |
 | `POST /api/aiops/incidents/:id/approve-remediation` | `reference` | 计划 04 审批 |
 | `POST /api/aiops/incidents/:id/reject-remediation` | `reference` | 计划 04 |
 | `POST /api/aiops/incidents/:id/execute-remediation` | `reference` | 计划 04 |
@@ -87,13 +87,19 @@
 | `GET /api/aiops/chat/sessions/:id` | `reference` | 计划 02 |
 | `GET /api/aiops/chat/sessions/:id/tool-calls` | `reference` | 计划 02 |
 
-## 当前 Go 端已实现（计划 01）
+## 当前 Go 端已实现（计划 01 + 01A + 02）
 
 | Go 接口 | 对应 qd 参考 | 说明 |
 | --- | --- | --- |
-| `POST /api/v1/aiops/incidents` | `POST /api/aiops/webhooks/alerts` | 创建 Incident，初始状态 `received` |
+| `POST /api/v1/aiops/incidents` | `POST /api/aiops/webhooks/alerts` | 创建 Incident 并自动触发五阶段诊断工作流，返回工作流结束后的最新状态 |
 | `GET /api/v1/aiops/incidents` | `GET /api/aiops/incidents` | 列表，`updated_at DESC`，空列表为 `[]` |
 | `GET /api/v1/aiops/incidents/:id` | `GET /api/aiops/incidents/:id` | 单条查询，404 `INCIDENT_NOT_FOUND` |
+| `GET /api/v1/aiops/incidents/:id/evidence` | （无 qd 对应） | 证据 DAG `{nodes, edges}`；快照/事件/日志/Metrics，已脱敏 |
+| `GET /api/v1/aiops/incidents/:id/runs` | （无 qd 对应） | 五角色 AgentRun 列表（role/attempt/status/output/tokens） |
+| `POST /api/v1/aiops/incidents/:id/reanalyze` | `POST /api/aiops/incidents/:id/reanalyze` | 终态重诊断，需 operator/admin |
+| `GET /api/v1/aiops/incidents/:id/events` | （无 qd 对应） | SSE 事件流，`lastEventId` 断线重放，15s 心跳 |
+
+模型调用约定：`KUBEJOJO_LLM_BASE_URL/API_KEY/MODEL/API_STYLE/TIMEOUT`。五角色输出全部经结构化校验（置信度/证据引用/Shell 命令等），非法输出只把 Incident 置 `failed`，不执行动作。未配置模型时确定性 triage/collector 照常运行，根因及后续角色记为 `model_unavailable`。
 
 文档与错误码见 `docs/aiops/api-v1.md`。
 

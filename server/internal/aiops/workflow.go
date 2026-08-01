@@ -348,11 +348,14 @@ func (w *Workflow) runTriage(ctx context.Context, run *AgentRun, inc Incident, s
 func (w *Workflow) runCollector(ctx context.Context, run *AgentRun, inc Incident, step roleStep) error {
 	// Deterministic Kubernetes evidence collection always runs; optional
 	// capability failures yield partial evidence and are recorded, not fatal.
+	// Collection takes the recent tail of logs (TailLines=200) rather than a
+	// SinceTime anchored at incident creation: on a fresh incident that would
+	// point at "now" and yield near-empty logs.
 	nodes, edges, collectErr := w.collector.Collect(ctx, evidence.Target{
 		Namespace: inc.Namespace,
 		Kind:      inc.ResourceKind,
 		Name:      inc.ResourceName,
-	}, evidence.Window{Start: inc.CreatedAt})
+	}, evidence.Window{})
 
 	var partial []string
 	if collectErr != nil {

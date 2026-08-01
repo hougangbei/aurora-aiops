@@ -26,5 +26,38 @@ ON incidents(status, updated_at DESC)`)
 		return err
 	}
 
+	_, err = db.Exec(`
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('admin','operator','viewer')),
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)`)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`
+CREATE TABLE IF NOT EXISTS sessions (
+  digest TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL
+)`)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`
+CREATE INDEX IF NOT EXISTS idx_sessions_user_expires
+ON sessions(user_id, expires_at)`)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }

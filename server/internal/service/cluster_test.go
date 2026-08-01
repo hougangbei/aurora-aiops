@@ -19,6 +19,60 @@ import (
 // projection and the new cluster.Node address selection share one rule: even
 // when an IPv6 InternalIP appears first in the node address list, both return
 // the same preferred IPv4 address.
+func newServiceWithSharedConfig(t *testing.T, configPath string) *ClusterService {
+	t.Helper()
+	kubeClient := kubefake.NewSimpleClientset()
+	metricsClient := metricsfake.NewSimpleClientset()
+	return &ClusterService{
+		client: &kube.Client{
+			Kubernetes:  kubeClient,
+			Metrics:     metricsClient,
+			RESTConfig:  &rest.Config{},
+			ConfigPath:  configPath,
+			AccessToken: "",
+		},
+	}
+}
+
+func TestKubectlArgsUseSharedKubeconfigWithoutBearerToken(t *testing.T) {
+	svc := newServiceWithSharedConfig(t, "/etc/kubejojo/cluster.conf")
+	args := svc.kubectlArgs("get", "pods")
+	joined := strings.Join(args, " ")
+	if strings.Contains(joined, "--token") {
+		t.Fatalf("args=%q", joined)
+	}
+	if !strings.Contains(joined, "--kubeconfig /etc/kubejojo/cluster.conf") {
+		t.Fatalf("args=%q", joined)
+	}
+}
+
+func TestGetPodDescribeNoLongerRequiresAccessToken(t *testing.T) {
+	pod := corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "api-0", Namespace: "default"},
+		Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "api", Image: "nginx"}}},
+	}
+	kubeClient := kubefake.NewSimpleClientset(&pod)
+	svc := &ClusterService{
+		client: &kube.Client{
+			Kubernetes:  kubeClient,
+			Metrics:     metricsfake.NewSimpleClientset(),
+			RESTConfig:  &rest.Config{},
+			ConfigPath:  "/etc/kubejojo/cluster.conf",
+			AccessToken: "",
+		},
+	}
+
+	_, err := svc.GetPodDescribe(context.Background(), "default", "api-0")
+	if err != nil {
+		// The kubectl binary or kubeconfig may not exist in the test
+		// environment; what must be guaranteed is that the shared-kubeconfig
+		// path was reached and the old request-level token gate is gone.
+		if strings.Contains(err.Error(), "access token is required") {
+			t.Fatalf("describe still requires access token: %v", err)
+		}
+	}
+}
+
 func TestListNodesIPMatchesClusterAddressRule(t *testing.T) {
 	node := corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{Name: "node-1"},

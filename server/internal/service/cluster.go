@@ -1438,22 +1438,12 @@ func (s *ClusterService) GetPodDescribe(
 	if strings.TrimSpace(s.client.ConfigPath) == "" {
 		return ResourceTextResult{}, fmt.Errorf("kubeconfig path is required for describe")
 	}
-	if strings.TrimSpace(s.client.AccessToken) == "" {
-		return ResourceTextResult{}, fmt.Errorf("access token is required for describe")
-	}
 
 	if _, err := s.client.Kubernetes.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{}); err != nil {
 		return ResourceTextResult{}, fmt.Errorf("get pod %s/%s: %w", namespace, name, err)
 	}
 
-	args := []string{
-		"--kubeconfig", s.client.ConfigPath,
-		"--token", s.client.AccessToken,
-		"describe",
-		"pod",
-		"-n", namespace,
-		name,
-	}
+	args := s.kubectlArgs("describe", "pod", "-n", namespace, name)
 
 	output, err := exec.CommandContext(ctx, "kubectl", args...).CombinedOutput()
 	if err != nil {
@@ -1644,9 +1634,6 @@ func (s *ClusterService) BuildPodExecCommand(
 	if strings.TrimSpace(s.client.ConfigPath) == "" {
 		return nil, "", fmt.Errorf("kubeconfig path is required for exec")
 	}
-	if strings.TrimSpace(s.client.AccessToken) == "" {
-		return nil, "", fmt.Errorf("access token is required for exec")
-	}
 
 	pod, err := s.client.Kubernetes.CoreV1().Pods(namespace).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
@@ -1660,14 +1647,7 @@ func (s *ClusterService) BuildPodExecCommand(
 		container = pod.Spec.Containers[0].Name
 	}
 
-	args := []string{
-		"--kubeconfig", s.client.ConfigPath,
-		"--token", s.client.AccessToken,
-		"exec",
-		"-i",
-		"-n", namespace,
-		name,
-	}
+	args := s.kubectlArgs("exec", "-i", "-n", namespace, name)
 	if tty {
 		args = append(args, "-t")
 	}
@@ -1926,6 +1906,14 @@ func (s *ClusterService) CreateManifestYAML(
 	}, nil
 }
 
+// kubectlArgs prepends the shared kubeconfig flags to a kubectl command. It
+// never passes --token: the shared kubeconfig carries the cluster identity.
+// A fresh slice is returned so callers cannot alias shared state.
+func (s *ClusterService) kubectlArgs(args ...string) []string {
+	base := []string{"--kubeconfig", s.client.ConfigPath}
+	return append(base, args...)
+}
+
 func (s *ClusterService) runKubectlCommand(
 	ctx context.Context,
 	stdin *bytes.Buffer,
@@ -1934,17 +1922,8 @@ func (s *ClusterService) runKubectlCommand(
 	if strings.TrimSpace(s.client.ConfigPath) == "" {
 		return nil, fmt.Errorf("kubeconfig path is required")
 	}
-	if strings.TrimSpace(s.client.AccessToken) == "" {
-		return nil, fmt.Errorf("access token is required")
-	}
 
-	baseArgs := []string{
-		"--kubeconfig", s.client.ConfigPath,
-		"--token", s.client.AccessToken,
-	}
-	commandArgs := append(baseArgs, args...)
-
-	cmd := exec.CommandContext(ctx, "kubectl", commandArgs...)
+	cmd := exec.CommandContext(ctx, "kubectl", s.kubectlArgs(args...)...)
 	if stdin != nil {
 		cmd.Stdin = stdin
 	}

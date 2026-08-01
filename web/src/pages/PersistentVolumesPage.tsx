@@ -25,19 +25,19 @@ import { useAppStore } from '../stores/appStore';
 export function PersistentVolumesPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const [yamlEditTarget, setYamlEditTarget] = useState<PersistentVolumeItem>();
 
   const volumesQuery = useQuery({
     queryKey: ['persistentvolumes'],
     queryFn: () => getPersistentVolumes(),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
 
   const volumeYamlQuery = useQuery({
     queryKey: ['persistentvolume-yaml', yamlEditTarget?.name],
     queryFn: () => getPersistentVolumeYaml(yamlEditTarget!.name),
-    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
+    enabled: dataMode === 'live' && Boolean(yamlEditTarget),
   });
 
   const updateVolumeYamlMutation = useMutation({
@@ -59,7 +59,7 @@ export function PersistentVolumesPage() {
     },
   });
 
-  const items = sessionMode === 'token' ? volumesQuery.data ?? [] : [];
+  const items = dataMode === 'live' ? volumesQuery.data ?? [] : [];
 
   const metrics = useMemo<ResourceMetric[]>(() => {
     const healthyCount = items.filter((item) => item.status === 'healthy').length;
@@ -159,7 +159,7 @@ export function PersistentVolumesPage() {
       width: 124,
       fixed: 'right',
       render: (_, item) =>
-        sessionMode === 'token' ? (
+        dataMode === 'live' ? (
           <ActionMenuButton
             loading={updateVolumeYamlMutation.isPending || deleteMutation.isPending}
             menu={{
@@ -198,7 +198,7 @@ export function PersistentVolumesPage() {
 
   return (
     <section className="space-y-5">
-      {sessionMode === 'token' && volumesQuery.error ? (
+      {dataMode === 'live' && volumesQuery.error ? (
         <Alert type="warning" showIcon message="PersistentVolume 数据加载失败" />
       ) : null}
 
@@ -209,7 +209,7 @@ export function PersistentVolumesPage() {
         dataSource={items}
         columns={columns}
         rowKey={(record) => record.name}
-        loading={sessionMode === 'token' && volumesQuery.isLoading}
+        loading={dataMode === 'live' && volumesQuery.isLoading}
         onRefresh={() => volumesQuery.refetch()}
         searchPlaceholder="搜索 PV、StorageClass、Claim、Source 或标签"
         searchPredicate={(record, keyword) =>

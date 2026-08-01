@@ -33,7 +33,7 @@ import { confirmResourceDelete } from '../components/workload/deleteConfirmation
 export function DeploymentsPage() {
   const { message, modal } = App.useApp();
   const navigate = useNavigate();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [scaleTarget, setScaleTarget] = useState<DeploymentItem>();
   const [scaleValue, setScaleValue] = useState(1);
@@ -42,7 +42,7 @@ export function DeploymentsPage() {
   const deploymentsQuery = useQuery({
     queryKey: ['deployments', currentNamespace],
     queryFn: () => getDeployments(currentNamespace),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
 
   const demoItems = useMemo(() => {
@@ -52,7 +52,7 @@ export function DeploymentsPage() {
       : demoDeployments.filter((item) => item.namespace === namespace);
   }, [currentNamespace]);
   const items =
-    sessionMode === 'demo' || !deploymentsQuery.data
+    dataMode === 'demo' || !deploymentsQuery.data
       ? demoItems
       : deploymentsQuery.data;
 
@@ -93,7 +93,7 @@ export function DeploymentsPage() {
   const deploymentYamlQuery = useQuery({
     queryKey: ['deployment-yaml', yamlEditTarget?.namespace, yamlEditTarget?.name],
     queryFn: () => getDeploymentYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
-    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
+    enabled: dataMode === 'live' && Boolean(yamlEditTarget),
   });
 
   const updateDeploymentYamlMutation = useMutation({
@@ -255,7 +255,7 @@ export function DeploymentsPage() {
       width: 124,
       fixed: 'right',
       render: (_, item) =>
-        sessionMode === 'demo' ? (
+        dataMode === 'demo' ? (
           <Tag>Demo</Tag>
         ) : (
           <ActionMenuButton
@@ -298,7 +298,7 @@ export function DeploymentsPage() {
 
   return (
     <section className="space-y-5">
-      {sessionMode === 'token' && deploymentsQuery.error ? (
+      {dataMode === 'live' && deploymentsQuery.error ? (
         <Alert
           type="warning"
           showIcon
@@ -313,7 +313,7 @@ export function DeploymentsPage() {
         dataSource={items}
         columns={columns}
         rowKey={(record) => `${record.namespace}/${record.name}`}
-        loading={sessionMode === 'token' && deploymentsQuery.isLoading}
+        loading={dataMode === 'live' && deploymentsQuery.isLoading}
         onRefresh={refreshDeployments}
         toolbarExtra={
           <Space size={8} wrap>
@@ -324,7 +324,7 @@ export function DeploymentsPage() {
             <ResourceYamlCreateButton
               resourceKind="Deployment"
               namespace={currentNamespace}
-              enabled={sessionMode === 'token'}
+              enabled={dataMode === 'live'}
               onCreated={refreshDeployments}
             />
           </Space>

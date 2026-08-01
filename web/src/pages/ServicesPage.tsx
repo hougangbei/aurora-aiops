@@ -27,20 +27,20 @@ function displayNamespace(namespace: string) {
 export function ServicesPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [yamlEditTarget, setYamlEditTarget] = useState<ServiceItem>();
 
   const servicesQuery = useQuery({
     queryKey: ['services', currentNamespace],
     queryFn: () => getServices(currentNamespace),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
 
   const serviceYamlQuery = useQuery({
     queryKey: ['service-yaml', yamlEditTarget?.namespace, yamlEditTarget?.name],
     queryFn: () => getServiceYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
-    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
+    enabled: dataMode === 'live' && Boolean(yamlEditTarget),
   });
 
   const updateServiceYamlMutation = useMutation({
@@ -63,7 +63,7 @@ export function ServicesPage() {
     },
   });
 
-  const items = sessionMode === 'token' ? servicesQuery.data ?? [] : [];
+  const items = dataMode === 'live' ? servicesQuery.data ?? [] : [];
   const namespaceLabel = displayNamespace(currentNamespace);
 
   const metrics = useMemo<ResourceMetric[]>(() => {
@@ -187,7 +187,7 @@ export function ServicesPage() {
       width: 124,
       fixed: 'right',
       render: (_, item) =>
-        sessionMode === 'token' ? (
+        dataMode === 'live' ? (
           <ActionMenuButton
             loading={updateServiceYamlMutation.isPending || deleteMutation.isPending}
             menu={{
@@ -231,7 +231,7 @@ export function ServicesPage() {
 
   return (
     <section className="space-y-5">
-      {sessionMode === 'token' && servicesQuery.error ? (
+      {dataMode === 'live' && servicesQuery.error ? (
         <Alert type="warning" showIcon message="Service 数据加载失败" />
       ) : null}
 
@@ -242,7 +242,7 @@ export function ServicesPage() {
         dataSource={items}
         columns={columns}
         rowKey={(record) => `${record.namespace}/${record.name}`}
-        loading={sessionMode === 'token' && servicesQuery.isLoading}
+        loading={dataMode === 'live' && servicesQuery.isLoading}
         onRefresh={() => servicesQuery.refetch()}
         toolbarExtra={
           <Space size={8} wrap>
@@ -250,7 +250,7 @@ export function ServicesPage() {
             <ResourceYamlCreateButton
               resourceKind="Service"
               namespace={currentNamespace}
-              enabled={sessionMode === 'token'}
+              enabled={dataMode === 'live'}
               onCreated={() => servicesQuery.refetch()}
             />
           </Space>

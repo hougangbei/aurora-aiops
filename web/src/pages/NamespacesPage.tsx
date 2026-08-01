@@ -58,7 +58,7 @@ function statusColor(status: string) {
 }
 
 export function NamespacesPage() {
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const setNamespace = useAppStore((state) => state.setNamespace);
   const [detailItem, setDetailItem] = useState<NamespaceItem>();
@@ -66,11 +66,11 @@ export function NamespacesPage() {
   const namespaceItemsQuery = useQuery({
     queryKey: ['namespace-items'],
     queryFn: getNamespaceItems,
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
 
   const items =
-    sessionMode === 'demo' || !namespaceItemsQuery.data
+    dataMode === 'demo' || !namespaceItemsQuery.data
       ? demoNamespaceItems
       : namespaceItemsQuery.data;
 
@@ -201,7 +201,7 @@ export function NamespacesPage() {
 
   return (
     <section className="space-y-5">
-      {sessionMode === 'token' && namespaceItemsQuery.error ? (
+      {dataMode === 'live' && namespaceItemsQuery.error ? (
         <Alert
           type="warning"
           showIcon
@@ -216,7 +216,7 @@ export function NamespacesPage() {
         dataSource={items}
         columns={columns}
         rowKey="name"
-        loading={sessionMode === 'token' && namespaceItemsQuery.isLoading}
+        loading={dataMode === 'live' && namespaceItemsQuery.isLoading}
         onRefresh={() => namespaceItemsQuery.refetch()}
         toolbarExtra={<Tag color="blue">当前上下文: {currentNamespace}</Tag>}
         searchPlaceholder="搜索命名空间、状态或标签"

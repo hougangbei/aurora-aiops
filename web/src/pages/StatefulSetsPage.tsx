@@ -32,7 +32,7 @@ import { confirmResourceDelete } from '../components/workload/deleteConfirmation
 export function StatefulSetsPage() {
   const { message, modal } = App.useApp();
   const navigate = useNavigate();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [scaleTarget, setScaleTarget] = useState<StatefulSetItem>();
   const [scaleValue, setScaleValue] = useState(1);
@@ -41,12 +41,12 @@ export function StatefulSetsPage() {
   const statefulSetsQuery = useQuery({
     queryKey: ['statefulsets', currentNamespace],
     queryFn: () => getStatefulSets(currentNamespace),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
   const useDemoData =
-    sessionMode === 'demo' ||
-    (sessionMode === 'token' && Boolean(statefulSetsQuery.error) && !statefulSetsQuery.data);
-  const allowOperations = sessionMode === 'token' && !useDemoData;
+    dataMode === 'demo' ||
+    (dataMode === 'live' && Boolean(statefulSetsQuery.error) && !statefulSetsQuery.data);
+  const allowOperations = dataMode === 'live' && !useDemoData;
 
   const demoItems = useMemo(() => {
     const namespace = currentNamespace.trim();
@@ -295,7 +295,7 @@ export function StatefulSetsPage() {
 
   return (
     <section className="space-y-5">
-      {sessionMode === 'token' && useDemoData ? (
+      {dataMode === 'live' && useDemoData ? (
         <Alert
           type="warning"
           showIcon
@@ -310,7 +310,7 @@ export function StatefulSetsPage() {
         dataSource={items}
         columns={columns}
         rowKey={(record) => `${record.namespace}/${record.name}`}
-        loading={sessionMode === 'token' && statefulSetsQuery.isLoading}
+        loading={dataMode === 'live' && statefulSetsQuery.isLoading}
         onRefresh={refreshStatefulSets}
         toolbarExtra={
           <Space size={8} wrap>

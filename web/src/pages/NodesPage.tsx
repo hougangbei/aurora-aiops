@@ -275,17 +275,17 @@ function DetailStat({
 }
 
 export function NodesPage() {
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const [detailNode, setDetailNode] = useState<NodeItem>();
 
   const nodesQuery = useQuery({
     queryKey: ['nodes'],
     queryFn: getNodes,
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
 
   const nodes =
-    sessionMode === 'demo' || !nodesQuery.data ? demoNodes : nodesQuery.data;
+    dataMode === 'demo' || !nodesQuery.data ? demoNodes : nodesQuery.data;
 
   const metrics = useMemo<ResourceMetric[]>(() => {
     const readyCount = nodes.filter(isNodeReady).length;
@@ -408,7 +408,7 @@ export function NodesPage() {
 
   return (
     <section className="space-y-5">
-      {sessionMode === 'token' && nodesQuery.error ? (
+      {dataMode === 'live' && nodesQuery.error ? (
         <Alert
           type="warning"
           showIcon
@@ -423,7 +423,7 @@ export function NodesPage() {
         dataSource={nodes}
         columns={columns}
         rowKey="name"
-        loading={sessionMode === 'token' && nodesQuery.isLoading}
+        loading={dataMode === 'live' && nodesQuery.isLoading}
         onRefresh={() => nodesQuery.refetch()}
         toolbarExtra={
           <Tag color="blue">

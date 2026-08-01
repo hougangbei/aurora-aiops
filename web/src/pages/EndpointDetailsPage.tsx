@@ -37,7 +37,7 @@ export function EndpointDetailsPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
   const params = useParams();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
 
   const namespace = decodeRouteParam(params.namespace);
@@ -46,7 +46,7 @@ export function EndpointDetailsPage() {
   const [activeTab, setActiveTab] = useState<EndpointDetailsTabKey>('overview');
   const [yamlEditOpen, setYamlEditOpen] = useState(false);
 
-  const allowLiveAccess = sessionMode === 'token';
+  const allowLiveAccess = dataMode === 'live';
 
   const endpointsQuery = useQuery({
     queryKey: ['endpoint-detail-list', namespace],

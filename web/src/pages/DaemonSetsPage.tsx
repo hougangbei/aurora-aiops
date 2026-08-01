@@ -31,19 +31,19 @@ import { confirmResourceDelete } from '../components/workload/deleteConfirmation
 export function DaemonSetsPage() {
   const { message, modal } = App.useApp();
   const navigate = useNavigate();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [yamlEditTarget, setYamlEditTarget] = useState<DaemonSetItem>();
 
   const daemonSetsQuery = useQuery({
     queryKey: ['daemonsets', currentNamespace],
     queryFn: () => getDaemonSets(currentNamespace),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
   const useDemoData =
-    sessionMode === 'demo' ||
-    (sessionMode === 'token' && Boolean(daemonSetsQuery.error) && !daemonSetsQuery.data);
-  const allowOperations = sessionMode === 'token' && !useDemoData;
+    dataMode === 'demo' ||
+    (dataMode === 'live' && Boolean(daemonSetsQuery.error) && !daemonSetsQuery.data);
+  const allowOperations = dataMode === 'live' && !useDemoData;
 
   const demoItems = useMemo(() => {
     const namespace = currentNamespace.trim();
@@ -261,7 +261,7 @@ export function DaemonSetsPage() {
 
   return (
     <section className="space-y-5">
-      {sessionMode === 'token' && useDemoData ? (
+      {dataMode === 'live' && useDemoData ? (
         <Alert
           type="warning"
           showIcon
@@ -276,7 +276,7 @@ export function DaemonSetsPage() {
         dataSource={items}
         columns={columns}
         rowKey={(record) => `${record.namespace}/${record.name}`}
-        loading={sessionMode === 'token' && daemonSetsQuery.isLoading}
+        loading={dataMode === 'live' && daemonSetsQuery.isLoading}
         onRefresh={refreshDaemonSets}
         toolbarExtra={
           <Space size={8} wrap>

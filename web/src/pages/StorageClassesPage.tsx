@@ -22,19 +22,19 @@ import { useAppStore } from '../stores/appStore';
 export function StorageClassesPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const [yamlEditTarget, setYamlEditTarget] = useState<StorageClassItem>();
 
   const classesQuery = useQuery({
     queryKey: ['storageclasses'],
     queryFn: () => getStorageClasses(),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
 
   const classYamlQuery = useQuery({
     queryKey: ['storageclass-yaml', yamlEditTarget?.name],
     queryFn: () => getStorageClassYaml(yamlEditTarget!.name),
-    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
+    enabled: dataMode === 'live' && Boolean(yamlEditTarget),
   });
 
   const updateClassYamlMutation = useMutation({
@@ -56,7 +56,7 @@ export function StorageClassesPage() {
     },
   });
 
-  const items = sessionMode === 'token' ? classesQuery.data ?? [] : [];
+  const items = dataMode === 'live' ? classesQuery.data ?? [] : [];
 
   const metrics = useMemo<ResourceMetric[]>(() => {
     const defaultCount = items.filter((item) => item.isDefault).length;
@@ -146,7 +146,7 @@ export function StorageClassesPage() {
       width: 124,
       fixed: 'right',
       render: (_, item) =>
-        sessionMode === 'token' ? (
+        dataMode === 'live' ? (
           <ActionMenuButton
             loading={updateClassYamlMutation.isPending || deleteMutation.isPending}
             menu={{
@@ -185,7 +185,7 @@ export function StorageClassesPage() {
 
   return (
     <section className="space-y-5">
-      {sessionMode === 'token' && classesQuery.error ? (
+      {dataMode === 'live' && classesQuery.error ? (
         <Alert type="warning" showIcon message="StorageClass 数据加载失败" />
       ) : null}
 
@@ -196,7 +196,7 @@ export function StorageClassesPage() {
         dataSource={items}
         columns={columns}
         rowKey={(record) => record.name}
-        loading={sessionMode === 'token' && classesQuery.isLoading}
+        loading={dataMode === 'live' && classesQuery.isLoading}
         onRefresh={() => classesQuery.refetch()}
         searchPlaceholder="搜索 StorageClass、Provisioner、Policy 或参数"
         searchPredicate={(record, keyword) =>

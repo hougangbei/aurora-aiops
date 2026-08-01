@@ -107,8 +107,8 @@ export function VersionBadge({ version = '' }: VersionBadgeProps) {
   const queryClient = useQueryClient();
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const sessionMode = useAppStore((state) => state.sessionMode);
-  const isInteractive = sessionMode === 'token';
+  const dataMode = useAppStore((state) => state.dataMode);
+  const isInteractive = dataMode === 'live';
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const buildInfoQuery = useQuery({

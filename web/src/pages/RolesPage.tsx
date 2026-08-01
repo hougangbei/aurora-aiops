@@ -47,20 +47,20 @@ function firstRuleSummary(item: RoleItem) {
 export function RolesPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [yamlEditTarget, setYamlEditTarget] = useState<RoleItem>();
 
   const rolesQuery = useQuery({
     queryKey: ['roles', currentNamespace],
     queryFn: () => getRoles(currentNamespace),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
 
   const roleYamlQuery = useQuery({
     queryKey: ['role-yaml', yamlEditTarget?.namespace, yamlEditTarget?.name],
     queryFn: () => getRoleYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
-    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
+    enabled: dataMode === 'live' && Boolean(yamlEditTarget),
   });
 
   const updateRoleYamlMutation = useMutation({
@@ -83,7 +83,7 @@ export function RolesPage() {
     },
   });
 
-  const items = sessionMode === 'token' ? rolesQuery.data ?? [] : [];
+  const items = dataMode === 'live' ? rolesQuery.data ?? [] : [];
   const namespaceLabel = displayNamespace(currentNamespace);
 
   const metrics = useMemo<ResourceMetric[]>(() => {
@@ -156,7 +156,7 @@ export function RolesPage() {
       width: 124,
       fixed: 'right',
       render: (_, item) =>
-        sessionMode === 'token' ? (
+        dataMode === 'live' ? (
           <ActionMenuButton
             loading={updateRoleYamlMutation.isPending || deleteMutation.isPending}
             menu={{
@@ -200,7 +200,7 @@ export function RolesPage() {
 
   return (
     <section className="space-y-5">
-      {sessionMode === 'token' && rolesQuery.error ? (
+      {dataMode === 'live' && rolesQuery.error ? (
         <Alert type="warning" showIcon message="Role 数据加载失败" />
       ) : null}
 
@@ -211,7 +211,7 @@ export function RolesPage() {
         dataSource={items}
         columns={columns}
         rowKey={(record) => `${record.namespace}/${record.name}`}
-        loading={sessionMode === 'token' && rolesQuery.isLoading}
+        loading={dataMode === 'live' && rolesQuery.isLoading}
         onRefresh={() => rolesQuery.refetch()}
         toolbarExtra={
           <Space size={8} wrap>
@@ -219,7 +219,7 @@ export function RolesPage() {
             <ResourceYamlCreateButton
               resourceKind="Role"
               namespace={currentNamespace}
-              enabled={sessionMode === 'token'}
+              enabled={dataMode === 'live'}
               onCreated={() => rolesQuery.refetch()}
             />
           </Space>

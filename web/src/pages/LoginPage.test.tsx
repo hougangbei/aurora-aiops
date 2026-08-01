@@ -89,7 +89,7 @@ describe('LoginPage', () => {
 
     await waitFor(() => {
       expect(useAppStore.getState().authenticated).toBe(true);
-      expect(useAppStore.getState().sessionMode).toBe('demo');
+      expect(useAppStore.getState().dataMode).toBe('demo');
     });
     expect(loginWithPassword).not.toHaveBeenCalled();
   });

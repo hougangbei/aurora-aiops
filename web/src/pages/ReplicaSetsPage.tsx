@@ -30,7 +30,7 @@ import { useAppStore } from '../stores/appStore';
 export function ReplicaSetsPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [scaleTarget, setScaleTarget] = useState<ReplicaSetItem>();
   const [scaleValue, setScaleValue] = useState(1);
@@ -39,12 +39,12 @@ export function ReplicaSetsPage() {
   const replicaSetsQuery = useQuery({
     queryKey: ['replicasets', currentNamespace],
     queryFn: () => getReplicaSets(currentNamespace),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
   const useDemoData =
-    sessionMode === 'demo' ||
-    (sessionMode === 'token' && Boolean(replicaSetsQuery.error) && !replicaSetsQuery.data);
-  const allowOperations = sessionMode === 'token' && !useDemoData;
+    dataMode === 'demo' ||
+    (dataMode === 'live' && Boolean(replicaSetsQuery.error) && !replicaSetsQuery.data);
+  const allowOperations = dataMode === 'live' && !useDemoData;
 
   const demoItems = useMemo(() => {
     const namespace = currentNamespace.trim();
@@ -220,7 +220,7 @@ export function ReplicaSetsPage() {
 
   return (
     <section className="space-y-5">
-      {sessionMode === 'token' && useDemoData ? (
+      {dataMode === 'live' && useDemoData ? (
         <Alert
           type="warning"
           showIcon
@@ -235,7 +235,7 @@ export function ReplicaSetsPage() {
         dataSource={items}
         columns={columns}
         rowKey={(record) => `${record.namespace}/${record.name}`}
-        loading={sessionMode === 'token' && replicaSetsQuery.isLoading}
+        loading={dataMode === 'live' && replicaSetsQuery.isLoading}
         onRefresh={refreshReplicaSets}
         toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
         searchPlaceholder="搜索 ReplicaSet、Owner、镜像、selector 或标签"

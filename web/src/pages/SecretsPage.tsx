@@ -36,20 +36,20 @@ function keyPreview(keys: string[]) {
 export function SecretsPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [yamlEditTarget, setYamlEditTarget] = useState<SecretItem>();
 
   const secretsQuery = useQuery({
     queryKey: ['secrets', currentNamespace],
     queryFn: () => getSecrets(currentNamespace),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
 
   const secretYamlQuery = useQuery({
     queryKey: ['secret-yaml', yamlEditTarget?.namespace, yamlEditTarget?.name],
     queryFn: () => getSecretYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
-    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
+    enabled: dataMode === 'live' && Boolean(yamlEditTarget),
   });
 
   const updateSecretYamlMutation = useMutation({
@@ -72,7 +72,7 @@ export function SecretsPage() {
     },
   });
 
-  const items = sessionMode === 'token' ? secretsQuery.data ?? [] : [];
+  const items = dataMode === 'live' ? secretsQuery.data ?? [] : [];
   const namespaceLabel = displayNamespace(currentNamespace);
 
   const metrics = useMemo<ResourceMetric[]>(() => {
@@ -177,7 +177,7 @@ export function SecretsPage() {
       width: 124,
       fixed: 'right',
       render: (_, item) =>
-        sessionMode === 'token' ? (
+        dataMode === 'live' ? (
           <ActionMenuButton
             loading={updateSecretYamlMutation.isPending || deleteMutation.isPending}
             menu={{
@@ -221,7 +221,7 @@ export function SecretsPage() {
 
   return (
     <section className="space-y-5">
-      {sessionMode === 'token' && secretsQuery.error ? (
+      {dataMode === 'live' && secretsQuery.error ? (
         <Alert type="warning" showIcon message="Secret 数据加载失败" />
       ) : null}
 
@@ -232,7 +232,7 @@ export function SecretsPage() {
         dataSource={items}
         columns={columns}
         rowKey={(record) => `${record.namespace}/${record.name}`}
-        loading={sessionMode === 'token' && secretsQuery.isLoading}
+        loading={dataMode === 'live' && secretsQuery.isLoading}
         onRefresh={() => secretsQuery.refetch()}
         toolbarExtra={
           <Space size={8} wrap>
@@ -240,7 +240,7 @@ export function SecretsPage() {
             <ResourceYamlCreateButton
               resourceKind="Secret"
               namespace={currentNamespace}
-              enabled={sessionMode === 'token'}
+              enabled={dataMode === 'live'}
               onCreated={() => secretsQuery.refetch()}
             />
           </Space>

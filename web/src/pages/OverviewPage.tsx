@@ -313,9 +313,9 @@ const nodeColumns: ColumnsType<NodeItem> = [
 ];
 
 export function OverviewPage() {
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const namespace = useAppStore((state) => state.namespace);
-  const enabled = sessionMode === 'token';
+  const enabled = dataMode === 'live';
 
   const summaryQuery = useQuery({
     queryKey: ['overview-summary', namespace],
@@ -437,7 +437,7 @@ export function OverviewPage() {
               Namespace: <span className="font-semibold text-slate-950">{namespace}</span>
             </div>
             <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm text-slate-700">
-              模式: <span className="font-semibold text-slate-950">{sessionMode === 'token' ? 'Real Cluster' : 'Demo'}</span>
+              模式: <span className="font-semibold text-slate-950">{dataMode === 'live' ? 'Real Cluster' : 'Demo'}</span>
             </div>
           </div>
 

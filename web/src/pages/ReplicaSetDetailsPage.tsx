@@ -37,7 +37,7 @@ export function ReplicaSetDetailsPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
   const params = useParams();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
 
   const namespace = decodeRouteParam(params.namespace);
@@ -51,12 +51,12 @@ export function ReplicaSetDetailsPage() {
   const replicaSetsQuery = useQuery({
     queryKey: ['replicaset-detail-list', namespace],
     queryFn: () => getReplicaSets(namespace),
-    enabled: sessionMode === 'token' && Boolean(namespace),
+    enabled: dataMode === 'live' && Boolean(namespace),
   });
   const useDemoData =
-    sessionMode === 'demo' ||
-    (sessionMode === 'token' && Boolean(replicaSetsQuery.error) && !replicaSetsQuery.data);
-  const allowLiveAccess = sessionMode === 'token' && !useDemoData;
+    dataMode === 'demo' ||
+    (dataMode === 'live' && Boolean(replicaSetsQuery.error) && !replicaSetsQuery.data);
+  const allowLiveAccess = dataMode === 'live' && !useDemoData;
 
   const replicaSetItem = useMemo<ReplicaSetItem | undefined>(() => {
     const source = useDemoData ? demoReplicaSets : replicaSetsQuery.data ?? [];
@@ -126,7 +126,7 @@ export function ReplicaSetDetailsPage() {
         }
       : replicaSetYamlQuery.data;
 
-  if (sessionMode === 'token' && replicaSetsQuery.isLoading) {
+  if (dataMode === 'live' && replicaSetsQuery.isLoading) {
     return (
       <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_12px_36px_rgba(15,23,42,0.05)]">
         <Typography.Paragraph className="!mb-0 text-sm text-slate-500">
@@ -139,7 +139,7 @@ export function ReplicaSetDetailsPage() {
   if (!replicaSetItem) {
     return (
       <section className="space-y-4">
-        {sessionMode === 'token' && replicaSetsQuery.error ? (
+        {dataMode === 'live' && replicaSetsQuery.error ? (
           <Alert type="warning" showIcon message="ReplicaSet 详情加载失败" />
         ) : null}
         <section className="rounded-[24px] border border-slate-200 bg-white p-8 shadow-[0_12px_36px_rgba(15,23,42,0.05)]">
@@ -165,7 +165,7 @@ export function ReplicaSetDetailsPage() {
 
   return (
     <section className="space-y-4">
-      {sessionMode === 'token' && useDemoData ? (
+      {dataMode === 'live' && useDemoData ? (
         <Alert
           type="warning"
           showIcon

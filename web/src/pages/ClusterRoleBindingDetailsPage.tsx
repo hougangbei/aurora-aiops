@@ -56,14 +56,14 @@ export function ClusterRoleBindingDetailsPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
   const params = useParams();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
 
   const name = decodeRouteParam(params.name);
 
   const [activeTab, setActiveTab] = useState<ClusterRoleBindingDetailsTabKey>('overview');
   const [yamlEditOpen, setYamlEditOpen] = useState(false);
 
-  const allowLiveAccess = sessionMode === 'token';
+  const allowLiveAccess = dataMode === 'live';
 
   const bindingsQuery = useQuery({
     queryKey: ['clusterrolebinding-detail-list'],

@@ -105,7 +105,7 @@ export function ResourceQuotaDetailsPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
   const params = useParams();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
 
   const namespace = decodeRouteParam(params.namespace);
@@ -114,7 +114,7 @@ export function ResourceQuotaDetailsPage() {
   const [activeTab, setActiveTab] = useState<ResourceQuotaDetailsTabKey>('overview');
   const [yamlEditOpen, setYamlEditOpen] = useState(false);
 
-  const allowLiveAccess = sessionMode === 'token';
+  const allowLiveAccess = dataMode === 'live';
 
   const resourceQuotasQuery = useQuery<ResourceQuotaItem[]>({
     queryKey: ['resourcequota-detail-list', namespace],

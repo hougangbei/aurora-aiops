@@ -36,7 +36,7 @@ export function CronJobDetailsPage() {
   const { message, modal } = App.useApp();
   const navigate = useNavigate();
   const params = useParams();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
 
   const namespace = decodeRouteParam(params.namespace);
@@ -48,12 +48,12 @@ export function CronJobDetailsPage() {
   const cronJobsQuery = useQuery({
     queryKey: ['cronjob-detail-list', namespace],
     queryFn: () => getCronJobs(namespace),
-    enabled: sessionMode === 'token' && Boolean(namespace),
+    enabled: dataMode === 'live' && Boolean(namespace),
   });
   const useDemoData =
-    sessionMode === 'demo' ||
-    (sessionMode === 'token' && Boolean(cronJobsQuery.error) && !cronJobsQuery.data);
-  const allowLiveAccess = sessionMode === 'token' && !useDemoData;
+    dataMode === 'demo' ||
+    (dataMode === 'live' && Boolean(cronJobsQuery.error) && !cronJobsQuery.data);
+  const allowLiveAccess = dataMode === 'live' && !useDemoData;
 
   const cronJobItem = useMemo<CronJobItem | undefined>(() => {
     const source = useDemoData ? demoCronJobs : cronJobsQuery.data ?? [];
@@ -108,7 +108,7 @@ export function CronJobDetailsPage() {
         }
       : cronJobYamlQuery.data;
 
-  if (sessionMode === 'token' && cronJobsQuery.isLoading) {
+  if (dataMode === 'live' && cronJobsQuery.isLoading) {
     return (
       <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_12px_36px_rgba(15,23,42,0.05)]">
         <Typography.Paragraph className="!mb-0 text-sm text-slate-500">
@@ -121,7 +121,7 @@ export function CronJobDetailsPage() {
   if (!cronJobItem) {
     return (
       <section className="space-y-4">
-        {sessionMode === 'token' && cronJobsQuery.error ? (
+        {dataMode === 'live' && cronJobsQuery.error ? (
           <Alert type="warning" showIcon message="CronJob 详情加载失败" />
         ) : null}
         <section className="rounded-[24px] border border-slate-200 bg-white p-8 shadow-[0_12px_36px_rgba(15,23,42,0.05)]">
@@ -156,7 +156,7 @@ export function CronJobDetailsPage() {
 
   return (
     <section className="space-y-4">
-      {sessionMode === 'token' && useDemoData ? (
+      {dataMode === 'live' && useDemoData ? (
         <Alert
           type="warning"
           showIcon

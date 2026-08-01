@@ -34,19 +34,19 @@ import { confirmResourceDelete } from '../components/workload/deleteConfirmation
 export function JobsPage() {
   const { message, modal } = App.useApp();
   const navigate = useNavigate();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [yamlEditTarget, setYamlEditTarget] = useState<JobItem>();
 
   const jobsQuery = useQuery({
     queryKey: ['jobs', currentNamespace],
     queryFn: () => getJobs(currentNamespace),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
   const useDemoData =
-    sessionMode === 'demo' ||
-    (sessionMode === 'token' && Boolean(jobsQuery.error) && !jobsQuery.data);
-  const allowOperations = sessionMode === 'token' && !useDemoData;
+    dataMode === 'demo' ||
+    (dataMode === 'live' && Boolean(jobsQuery.error) && !jobsQuery.data);
+  const allowOperations = dataMode === 'live' && !useDemoData;
 
   const demoItems = useMemo(() => {
     const namespace = currentNamespace.trim();
@@ -262,7 +262,7 @@ export function JobsPage() {
 
   return (
     <section className="space-y-5">
-      {sessionMode === 'token' && useDemoData ? (
+      {dataMode === 'live' && useDemoData ? (
         <Alert
           type="warning"
           showIcon
@@ -277,7 +277,7 @@ export function JobsPage() {
         dataSource={items}
         columns={columns}
         rowKey={(record) => `${record.namespace}/${record.name}`}
-        loading={sessionMode === 'token' && jobsQuery.isLoading}
+        loading={dataMode === 'live' && jobsQuery.isLoading}
         onRefresh={refreshJobs}
         toolbarExtra={
           <Space size={8} wrap>

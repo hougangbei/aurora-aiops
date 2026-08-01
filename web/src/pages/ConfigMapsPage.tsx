@@ -39,20 +39,20 @@ function keyPreview(keys: string[]) {
 export function ConfigMapsPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [yamlEditTarget, setYamlEditTarget] = useState<ConfigMapItem>();
 
   const configMapsQuery = useQuery({
     queryKey: ['configmaps', currentNamespace],
     queryFn: () => getConfigMaps(currentNamespace),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
 
   const configMapYamlQuery = useQuery({
     queryKey: ['configmap-yaml', yamlEditTarget?.namespace, yamlEditTarget?.name],
     queryFn: () => getConfigMapYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
-    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
+    enabled: dataMode === 'live' && Boolean(yamlEditTarget),
   });
 
   const updateConfigMapYamlMutation = useMutation({
@@ -75,7 +75,7 @@ export function ConfigMapsPage() {
     },
   });
 
-  const items = sessionMode === 'token' ? configMapsQuery.data ?? [] : [];
+  const items = dataMode === 'live' ? configMapsQuery.data ?? [] : [];
   const namespaceLabel = displayNamespace(currentNamespace);
 
   const metrics = useMemo<ResourceMetric[]>(() => {
@@ -181,7 +181,7 @@ export function ConfigMapsPage() {
       width: 124,
       fixed: 'right',
       render: (_, item) =>
-        sessionMode === 'token' ? (
+        dataMode === 'live' ? (
           <ActionMenuButton
             loading={updateConfigMapYamlMutation.isPending || deleteMutation.isPending}
             menu={{
@@ -225,7 +225,7 @@ export function ConfigMapsPage() {
 
   return (
     <section className="space-y-5">
-      {sessionMode === 'token' && configMapsQuery.error ? (
+      {dataMode === 'live' && configMapsQuery.error ? (
         <Alert type="warning" showIcon message="ConfigMap 数据加载失败" />
       ) : null}
 
@@ -236,7 +236,7 @@ export function ConfigMapsPage() {
         dataSource={items}
         columns={columns}
         rowKey={(record) => `${record.namespace}/${record.name}`}
-        loading={sessionMode === 'token' && configMapsQuery.isLoading}
+        loading={dataMode === 'live' && configMapsQuery.isLoading}
         onRefresh={() => configMapsQuery.refetch()}
         toolbarExtra={
           <Space size={8} wrap>
@@ -244,7 +244,7 @@ export function ConfigMapsPage() {
             <ResourceYamlCreateButton
               resourceKind="ConfigMap"
               namespace={currentNamespace}
-              enabled={sessionMode === 'token'}
+              enabled={dataMode === 'live'}
               onCreated={() => configMapsQuery.refetch()}
             />
           </Space>

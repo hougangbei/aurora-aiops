@@ -35,19 +35,19 @@ function preview(items: string[]) {
 export function ClusterRoleBindingsPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const [yamlEditTarget, setYamlEditTarget] = useState<ClusterRoleBindingItem>();
 
   const bindingsQuery = useQuery({
     queryKey: ['clusterrolebindings'],
     queryFn: () => getClusterRoleBindings(),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
 
   const bindingYamlQuery = useQuery({
     queryKey: ['clusterrolebinding-yaml', yamlEditTarget?.name],
     queryFn: () => getClusterRoleBindingYaml(yamlEditTarget!.name),
-    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
+    enabled: dataMode === 'live' && Boolean(yamlEditTarget),
   });
 
   const updateBindingYamlMutation = useMutation({
@@ -69,7 +69,7 @@ export function ClusterRoleBindingsPage() {
     },
   });
 
-  const items = sessionMode === 'token' ? bindingsQuery.data ?? [] : [];
+  const items = dataMode === 'live' ? bindingsQuery.data ?? [] : [];
 
   const metrics = useMemo<ResourceMetric[]>(() => {
     const subjects = items.reduce((sum, item) => sum + item.subjectCount, 0);
@@ -150,7 +150,7 @@ export function ClusterRoleBindingsPage() {
       width: 124,
       fixed: 'right',
       render: (_, item) =>
-        sessionMode === 'token' ? (
+        dataMode === 'live' ? (
           <ActionMenuButton
             loading={updateBindingYamlMutation.isPending || deleteMutation.isPending}
             menu={{
@@ -189,7 +189,7 @@ export function ClusterRoleBindingsPage() {
 
   return (
     <section className="space-y-5">
-      {sessionMode === 'token' && bindingsQuery.error ? (
+      {dataMode === 'live' && bindingsQuery.error ? (
         <Alert type="warning" showIcon message="ClusterRoleBinding 数据加载失败" />
       ) : null}
 
@@ -200,7 +200,7 @@ export function ClusterRoleBindingsPage() {
         dataSource={items}
         columns={columns}
         rowKey={(record) => record.name}
-        loading={sessionMode === 'token' && bindingsQuery.isLoading}
+        loading={dataMode === 'live' && bindingsQuery.isLoading}
         onRefresh={() => bindingsQuery.refetch()}
         toolbarExtra={
           <Space size={8} wrap>
@@ -208,7 +208,7 @@ export function ClusterRoleBindingsPage() {
             <ResourceYamlCreateButton
               resourceKind="ClusterRoleBinding"
               namespace=""
-              enabled={sessionMode === 'token'}
+              enabled={dataMode === 'live'}
               onCreated={() => bindingsQuery.refetch()}
             />
           </Space>

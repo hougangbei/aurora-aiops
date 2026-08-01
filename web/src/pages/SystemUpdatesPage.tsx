@@ -199,11 +199,11 @@ function StatusNotice({ state }: { state: AlertState }) {
 }
 
 function getPrimaryAlert(
-  sessionMode: 'demo' | 'token',
+  dataMode: 'demo' | 'live',
   status: UpdateStatus | undefined,
   hasError: boolean,
 ): AlertState {
-  if (sessionMode === 'demo') {
+  if (dataMode === 'demo') {
     return {
       type: 'info',
       message: '当前为演示模式',
@@ -255,7 +255,7 @@ function getPrimaryAlert(
 export function SystemUpdatesPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const [updateError, setUpdateError] = useState('');
   const [rollbackError, setRollbackError] = useState('');
   const [restartError, setRestartError] = useState('');
@@ -268,7 +268,7 @@ export function SystemUpdatesPage() {
   const updateStatusQuery = useQuery({
     queryKey: ['system-update-status'],
     queryFn: () => getUpdateStatus(false),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
 
   const clearErrors = () => {
@@ -280,7 +280,7 @@ export function SystemUpdatesPage() {
   const refreshStatus = async (force = false) => {
     const tasks: Array<Promise<unknown>> = [buildInfoQuery.refetch()];
 
-    if (sessionMode === 'token') {
+    if (dataMode === 'live') {
       tasks.push(
         queryClient.fetchQuery({
           queryKey: ['system-update-status'],
@@ -349,9 +349,9 @@ export function SystemUpdatesPage() {
 
   const busy =
     updateMutation.isPending || rollbackMutation.isPending || restartMutation.isPending;
-  const loading = buildInfoQuery.isLoading || (sessionMode === 'token' && updateStatusQuery.isLoading);
+  const loading = buildInfoQuery.isLoading || (dataMode === 'live' && updateStatusQuery.isLoading);
   const updateStatus = updateStatusQuery.data;
-  const statusError = sessionMode === 'token' && Boolean(updateStatusQuery.error);
+  const statusError = dataMode === 'live' && Boolean(updateStatusQuery.error);
 
   const runningVersion = updateStatus?.runningVersion || buildInfoQuery.data?.version || '-';
   const installedVersion = updateStatus?.installedVersion || runningVersion;
@@ -359,7 +359,7 @@ export function SystemUpdatesPage() {
   const backupVersion = updateStatus?.backupVersion || '';
   const buildType = buildInfoQuery.data?.buildType || updateStatus?.buildType || 'unknown';
   const actor =
-    updateStatus?.currentActor || (sessionMode === 'demo' ? '演示用户' : '未知主体');
+    updateStatus?.currentActor || (dataMode === 'demo' ? '演示用户' : '未知主体');
   const repository = updateStatus?.repository || '未配置';
   const releaseName =
     updateStatus?.releaseInfo?.name ||
@@ -369,8 +369,8 @@ export function SystemUpdatesPage() {
   const releasePublishedAt = formatTimestamp(updateStatus?.releaseInfo?.publishedAt);
   const releaseBody = normalizeReleaseBody(updateStatus?.releaseInfo?.body);
   const releaseLink = updateStatus?.releaseInfo?.htmlUrl;
-  const canManage = sessionMode === 'token' && !statusError;
-  const primaryAlert = getPrimaryAlert(sessionMode, updateStatus, statusError);
+  const canManage = dataMode === 'live' && !statusError;
+  const primaryAlert = getPrimaryAlert(dataMode, updateStatus, statusError);
   const actionAlert: AlertState | null = updateMutation.isPending
     ? {
         type: 'info',
@@ -459,7 +459,7 @@ export function SystemUpdatesPage() {
                         ? '已安装，等待重启'
                         : updateStatus?.primaryState === 'update_available'
                           ? '可安装更新'
-                          : sessionMode === 'demo'
+                          : dataMode === 'demo'
                             ? '只读演示'
                             : '已是最新版本'
                     }
@@ -500,7 +500,7 @@ export function SystemUpdatesPage() {
                 status={
                   <>
                     <Tag color={updateStatus?.canInstall ? 'gold' : 'default'}>
-                      {sessionMode === 'demo'
+                      {dataMode === 'demo'
                         ? '演示模式不可执行'
                         : updateMutation.isPending
                           ? '安装进行中'
@@ -529,7 +529,7 @@ export function SystemUpdatesPage() {
                   >
                     {updateMutation.isPending
                       ? '正在安装'
-                      : sessionMode === 'demo'
+                      : dataMode === 'demo'
                         ? '需要真实 Token'
                         : updateStatus?.primaryState === 'restart_required'
                           ? '等待重启'
@@ -546,7 +546,7 @@ export function SystemUpdatesPage() {
                 status={
                   <>
                     <Tag color={updateStatus?.canRestart ? 'blue' : 'default'}>
-                      {sessionMode === 'demo'
+                      {dataMode === 'demo'
                         ? '演示模式不可执行'
                         : restartMutation.isPending
                           ? '正在重启'
@@ -572,7 +572,7 @@ export function SystemUpdatesPage() {
                   >
                     {restartMutation.isPending
                       ? '正在重启'
-                      : sessionMode === 'demo'
+                      : dataMode === 'demo'
                         ? '需要真实 Token'
                         : updateStatus?.canRestart
                           ? '立即重启'
@@ -587,7 +587,7 @@ export function SystemUpdatesPage() {
                 status={
                   <>
                     <Tag color={updateStatus?.canRollback ? 'red' : 'default'}>
-                      {sessionMode === 'demo'
+                      {dataMode === 'demo'
                         ? '演示模式不可执行'
                         : rollbackMutation.isPending
                           ? '回滚进行中'
@@ -614,7 +614,7 @@ export function SystemUpdatesPage() {
                   >
                     {rollbackMutation.isPending
                       ? '正在回滚'
-                      : sessionMode === 'demo'
+                      : dataMode === 'demo'
                         ? '需要真实 Token'
                         : updateStatus?.canRollback
                           ? '回滚版本'

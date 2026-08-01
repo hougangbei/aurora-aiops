@@ -27,20 +27,20 @@ function displayNamespace(namespace: string) {
 export function IngressesPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [yamlEditTarget, setYamlEditTarget] = useState<IngressItem>();
 
   const ingressesQuery = useQuery({
     queryKey: ['ingresses', currentNamespace],
     queryFn: () => getIngresses(currentNamespace),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
 
   const ingressYamlQuery = useQuery({
     queryKey: ['ingress-yaml', yamlEditTarget?.namespace, yamlEditTarget?.name],
     queryFn: () => getIngressYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
-    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
+    enabled: dataMode === 'live' && Boolean(yamlEditTarget),
   });
 
   const updateIngressYamlMutation = useMutation({
@@ -63,7 +63,7 @@ export function IngressesPage() {
     },
   });
 
-  const items = sessionMode === 'token' ? ingressesQuery.data ?? [] : [];
+  const items = dataMode === 'live' ? ingressesQuery.data ?? [] : [];
   const namespaceLabel = displayNamespace(currentNamespace);
 
   const metrics = useMemo<ResourceMetric[]>(() => {
@@ -190,7 +190,7 @@ export function IngressesPage() {
       width: 124,
       fixed: 'right',
       render: (_, item) =>
-        sessionMode === 'token' ? (
+        dataMode === 'live' ? (
           <ActionMenuButton
             loading={updateIngressYamlMutation.isPending || deleteMutation.isPending}
             menu={{
@@ -234,7 +234,7 @@ export function IngressesPage() {
 
   return (
     <section className="space-y-5">
-      {sessionMode === 'token' && ingressesQuery.error ? (
+      {dataMode === 'live' && ingressesQuery.error ? (
         <Alert type="warning" showIcon message="Ingress 数据加载失败" />
       ) : null}
 
@@ -245,7 +245,7 @@ export function IngressesPage() {
         dataSource={items}
         columns={columns}
         rowKey={(record) => `${record.namespace}/${record.name}`}
-        loading={sessionMode === 'token' && ingressesQuery.isLoading}
+        loading={dataMode === 'live' && ingressesQuery.isLoading}
         onRefresh={() => ingressesQuery.refetch()}
         toolbarExtra={
           <Space size={8} wrap>
@@ -253,7 +253,7 @@ export function IngressesPage() {
             <ResourceYamlCreateButton
               resourceKind="Ingress"
               namespace={currentNamespace}
-              enabled={sessionMode === 'token'}
+              enabled={dataMode === 'live'}
               onCreated={() => ingressesQuery.refetch()}
             />
           </Space>

@@ -37,7 +37,7 @@ export function PersistentVolumeClaimDetailsPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
   const params = useParams();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
 
   const namespace = decodeRouteParam(params.namespace);
@@ -46,7 +46,7 @@ export function PersistentVolumeClaimDetailsPage() {
   const [activeTab, setActiveTab] = useState<PersistentVolumeClaimDetailsTabKey>('overview');
   const [yamlEditOpen, setYamlEditOpen] = useState(false);
 
-  const allowLiveAccess = sessionMode === 'token';
+  const allowLiveAccess = dataMode === 'live';
 
   const claimsQuery = useQuery({
     queryKey: ['persistentvolumeclaim-detail-list', namespace],

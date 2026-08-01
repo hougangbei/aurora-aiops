@@ -77,20 +77,20 @@ function scopePreview(item: ResourceQuotaItem) {
 export function ResourceQuotasPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [yamlEditTarget, setYamlEditTarget] = useState<ResourceQuotaItem>();
 
   const resourceQuotasQuery = useQuery<ResourceQuotaItem[]>({
     queryKey: ['resourcequotas', currentNamespace],
     queryFn: () => getResourceQuotas(currentNamespace),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
 
   const resourceQuotaYamlQuery = useQuery<ResourceTextResult>({
     queryKey: ['resourcequota-yaml', yamlEditTarget?.namespace, yamlEditTarget?.name],
     queryFn: () => getResourceQuotaYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
-    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
+    enabled: dataMode === 'live' && Boolean(yamlEditTarget),
   });
 
   const updateResourceQuotaYamlMutation = useMutation({
@@ -113,7 +113,7 @@ export function ResourceQuotasPage() {
     },
   });
 
-  const items = sessionMode === 'token' ? resourceQuotasQuery.data ?? [] : [];
+  const items = dataMode === 'live' ? resourceQuotasQuery.data ?? [] : [];
   const namespaceLabel = displayNamespace(currentNamespace);
 
   const metrics = useMemo<ResourceMetric[]>(() => {
@@ -220,7 +220,7 @@ export function ResourceQuotasPage() {
       width: 124,
       fixed: 'right',
       render: (_, item) =>
-        sessionMode === 'token' ? (
+        dataMode === 'live' ? (
           <ActionMenuButton
             loading={updateResourceQuotaYamlMutation.isPending || deleteMutation.isPending}
             menu={{
@@ -263,7 +263,7 @@ export function ResourceQuotasPage() {
 
   return (
     <section className="space-y-5">
-      {sessionMode === 'token' && resourceQuotasQuery.error ? (
+      {dataMode === 'live' && resourceQuotasQuery.error ? (
         <Alert type="warning" showIcon message="ResourceQuota 数据加载失败" />
       ) : null}
 
@@ -274,7 +274,7 @@ export function ResourceQuotasPage() {
         dataSource={items}
         columns={columns}
         rowKey={(record) => `${record.namespace}/${record.name}`}
-        loading={sessionMode === 'token' && resourceQuotasQuery.isLoading}
+        loading={dataMode === 'live' && resourceQuotasQuery.isLoading}
         onRefresh={() => resourceQuotasQuery.refetch()}
         toolbarExtra={
           <Space size={8} wrap>
@@ -282,7 +282,7 @@ export function ResourceQuotasPage() {
             <ResourceYamlCreateButton
               resourceKind="ResourceQuota"
               namespace={currentNamespace}
-              enabled={sessionMode === 'token'}
+              enabled={dataMode === 'live'}
               onCreated={() => resourceQuotasQuery.refetch()}
             />
           </Space>

@@ -39,7 +39,7 @@ import { useAppStore } from '../stores/appStore';
 export function PodsPage() {
   const { message, modal } = App.useApp();
   const navigate = useNavigate();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [logTarget, setLogTarget] = useState<PodItem>();
   const [logContainer, setLogContainer] = useState<string>();
@@ -51,14 +51,14 @@ export function PodsPage() {
   const podsQuery = useQuery({
     queryKey: ['pods', currentNamespace],
     queryFn: () => getPods(currentNamespace),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
 
   const demoItems = useMemo(() => {
     const namespace = currentNamespace.trim();
     return namespace === '' ? demoPods : demoPods.filter((item) => item.namespace === namespace);
   }, [currentNamespace]);
-  const items = sessionMode === 'demo' || !podsQuery.data ? demoItems : podsQuery.data;
+  const items = dataMode === 'demo' || !podsQuery.data ? demoItems : podsQuery.data;
   const namespaceLabel = displayNamespace(currentNamespace);
 
   const refreshPods = async () => {
@@ -91,25 +91,25 @@ export function PodsPage() {
   const podLogsQuery = useQuery({
     queryKey: ['pod-logs', logTarget?.namespace, logTarget?.name, logContainer],
     queryFn: () => getPodLogs(logTarget!.namespace, logTarget!.name, logContainer!),
-    enabled: sessionMode === 'token' && Boolean(logTarget && logContainer),
+    enabled: dataMode === 'live' && Boolean(logTarget && logContainer),
   });
 
   const podYamlQuery = useQuery({
     queryKey: ['pod-yaml', inspectTarget?.namespace, inspectTarget?.name],
     queryFn: () => getPodYaml(inspectTarget!.namespace, inspectTarget!.name),
-    enabled: sessionMode === 'token' && Boolean(inspectTarget),
+    enabled: dataMode === 'live' && Boolean(inspectTarget),
   });
 
   const podDescribeQuery = useQuery({
     queryKey: ['pod-describe', inspectTarget?.namespace, inspectTarget?.name],
     queryFn: () => getPodDescribe(inspectTarget!.namespace, inspectTarget!.name),
-    enabled: sessionMode === 'token' && Boolean(inspectTarget),
+    enabled: dataMode === 'live' && Boolean(inspectTarget),
   });
 
   const podYamlEditorQuery = useQuery({
     queryKey: ['pod-yaml-editor', yamlEditTarget?.namespace, yamlEditTarget?.name],
     queryFn: () => getPodYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
-    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
+    enabled: dataMode === 'live' && Boolean(yamlEditTarget),
   });
 
   const openLogModal = (item: PodItem) => {
@@ -244,7 +244,7 @@ export function PodsPage() {
       width: 124,
       fixed: 'right',
       render: (_, item) =>
-        sessionMode === 'demo' ? (
+        dataMode === 'demo' ? (
           <Tag>Demo</Tag>
         ) : (
           <ActionMenuButton
@@ -291,7 +291,7 @@ export function PodsPage() {
       value: item.name,
     })) ?? [];
   const logResult: PodLogResult | undefined =
-    sessionMode === 'demo' && logTarget
+    dataMode === 'demo' && logTarget
       ? {
           namespace: logTarget.namespace,
           name: logTarget.name,
@@ -306,7 +306,7 @@ export function PodsPage() {
 
   return (
     <section className="space-y-5">
-      {sessionMode === 'token' && podsQuery.error ? (
+      {dataMode === 'live' && podsQuery.error ? (
         <Alert
           type="warning"
           showIcon
@@ -321,7 +321,7 @@ export function PodsPage() {
         dataSource={items}
         columns={columns}
         rowKey={(record) => `${record.namespace}/${record.name}`}
-        loading={sessionMode === 'token' && podsQuery.isLoading}
+        loading={dataMode === 'live' && podsQuery.isLoading}
         onRefresh={refreshPods}
         toolbarExtra={<Tag color="blue">当前上下文: {namespaceLabel}</Tag>}
         searchPlaceholder="搜索 Pod、节点、状态、所属资源或标签"
@@ -392,7 +392,7 @@ export function PodsPage() {
                 {inspectTarget ? `${inspectTarget.namespace}/${inspectTarget.name}` : '-'}
               </Typography.Text>
             </Space>
-            {sessionMode === 'token' ? (
+            {dataMode === 'live' ? (
               <Button
                 onClick={() => {
                   if (inspectTab === 'yaml') {
@@ -418,9 +418,9 @@ export function PodsPage() {
                 label: 'YAML',
                 children: (
                   <PodTextViewer
-                    error={sessionMode === 'token' ? podYamlQuery.error : undefined}
+                    error={dataMode === 'live' ? podYamlQuery.error : undefined}
                     result={
-                      sessionMode === 'demo' && inspectTarget
+                      dataMode === 'demo' && inspectTarget
                         ? {
                             namespace: inspectTarget.namespace,
                             name: inspectTarget.name,
@@ -441,9 +441,9 @@ export function PodsPage() {
                 label: 'Describe',
                 children: (
                   <PodTextViewer
-                    error={sessionMode === 'token' ? podDescribeQuery.error : undefined}
+                    error={dataMode === 'live' ? podDescribeQuery.error : undefined}
                     result={
-                      sessionMode === 'demo' && inspectTarget
+                      dataMode === 'demo' && inspectTarget
                         ? {
                             namespace: inspectTarget.namespace,
                             name: inspectTarget.name,
@@ -487,14 +487,14 @@ export function PodsPage() {
                 style={{ minWidth: 220 }}
               />
             </Space>
-            {sessionMode === 'token' ? (
+            {dataMode === 'live' ? (
               <Button onClick={() => void podLogsQuery.refetch()} loading={podLogsQuery.isFetching}>
                 Refresh
               </Button>
             ) : null}
           </div>
 
-          {sessionMode === 'token' && podLogsQuery.error ? (
+          {dataMode === 'live' && podLogsQuery.error ? (
             <Alert type="warning" showIcon message="Pod logs 加载失败" />
           ) : null}
 

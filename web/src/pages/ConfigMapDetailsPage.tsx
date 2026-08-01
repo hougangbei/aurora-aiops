@@ -56,7 +56,7 @@ export function ConfigMapDetailsPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
   const params = useParams();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
 
   const namespace = decodeRouteParam(params.namespace);
@@ -65,7 +65,7 @@ export function ConfigMapDetailsPage() {
   const [activeTab, setActiveTab] = useState<ConfigMapDetailsTabKey>('overview');
   const [yamlEditOpen, setYamlEditOpen] = useState(false);
 
-  const allowLiveAccess = sessionMode === 'token';
+  const allowLiveAccess = dataMode === 'live';
 
   const configMapsQuery = useQuery({
     queryKey: ['configmap-detail-list', namespace],

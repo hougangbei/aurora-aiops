@@ -49,19 +49,19 @@ function firstRuleSummary(item: ClusterRoleItem) {
 export function ClusterRolesPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const [yamlEditTarget, setYamlEditTarget] = useState<ClusterRoleItem>();
 
   const rolesQuery = useQuery({
     queryKey: ['clusterroles'],
     queryFn: () => getClusterRoles(),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
 
   const roleYamlQuery = useQuery({
     queryKey: ['clusterrole-yaml', yamlEditTarget?.name],
     queryFn: () => getClusterRoleYaml(yamlEditTarget!.name),
-    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
+    enabled: dataMode === 'live' && Boolean(yamlEditTarget),
   });
 
   const updateRoleYamlMutation = useMutation({
@@ -83,7 +83,7 @@ export function ClusterRolesPage() {
     },
   });
 
-  const items = sessionMode === 'token' ? rolesQuery.data ?? [] : [];
+  const items = dataMode === 'live' ? rolesQuery.data ?? [] : [];
 
   const metrics = useMemo<ResourceMetric[]>(() => {
     const rules = items.reduce((sum, item) => sum + item.ruleCount, 0);
@@ -169,7 +169,7 @@ export function ClusterRolesPage() {
       width: 124,
       fixed: 'right',
       render: (_, item) =>
-        sessionMode === 'token' ? (
+        dataMode === 'live' ? (
           <ActionMenuButton
             loading={updateRoleYamlMutation.isPending || deleteMutation.isPending}
             menu={{
@@ -208,7 +208,7 @@ export function ClusterRolesPage() {
 
   return (
     <section className="space-y-5">
-      {sessionMode === 'token' && rolesQuery.error ? (
+      {dataMode === 'live' && rolesQuery.error ? (
         <Alert type="warning" showIcon message="ClusterRole 数据加载失败" />
       ) : null}
 
@@ -219,7 +219,7 @@ export function ClusterRolesPage() {
         dataSource={items}
         columns={columns}
         rowKey={(record) => record.name}
-        loading={sessionMode === 'token' && rolesQuery.isLoading}
+        loading={dataMode === 'live' && rolesQuery.isLoading}
         onRefresh={() => rolesQuery.refetch()}
         toolbarExtra={
           <Space size={8} wrap>
@@ -227,7 +227,7 @@ export function ClusterRolesPage() {
             <ResourceYamlCreateButton
               resourceKind="ClusterRole"
               namespace=""
-              enabled={sessionMode === 'token'}
+              enabled={dataMode === 'live'}
               onCreated={() => rolesQuery.refetch()}
             />
           </Space>

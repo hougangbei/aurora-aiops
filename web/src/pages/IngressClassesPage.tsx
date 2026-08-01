@@ -37,25 +37,25 @@ function parameterSummary(item: IngressClassItem) {
 export function IngressClassesPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const [yamlEditTarget, setYamlEditTarget] = useState<IngressClassItem>();
 
   const classesQuery = useQuery({
     queryKey: ['ingressclasses'],
     queryFn: () => getIngressClasses(),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
 
   const ingressesQuery = useQuery({
     queryKey: ['ingressclasses-ingresses'],
     queryFn: () => getIngresses(),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
 
   const classYamlQuery = useQuery({
     queryKey: ['ingressclass-yaml', yamlEditTarget?.name],
     queryFn: () => getIngressClassYaml(yamlEditTarget!.name),
-    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
+    enabled: dataMode === 'live' && Boolean(yamlEditTarget),
   });
 
   const updateClassYamlMutation = useMutation({
@@ -77,8 +77,8 @@ export function IngressClassesPage() {
     },
   });
 
-  const items = sessionMode === 'token' ? classesQuery.data ?? [] : [];
-  const ingresses = sessionMode === 'token' ? ingressesQuery.data ?? [] : [];
+  const items = dataMode === 'live' ? classesQuery.data ?? [] : [];
+  const ingresses = dataMode === 'live' ? ingressesQuery.data ?? [] : [];
 
   const ingressCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -182,7 +182,7 @@ export function IngressClassesPage() {
       width: 124,
       fixed: 'right',
       render: (_, item) =>
-        sessionMode === 'token' ? (
+        dataMode === 'live' ? (
           <ActionMenuButton
             loading={updateClassYamlMutation.isPending || deleteMutation.isPending}
             menu={{
@@ -221,7 +221,7 @@ export function IngressClassesPage() {
 
   return (
     <section className="space-y-5">
-      {sessionMode === 'token' && classesQuery.error ? (
+      {dataMode === 'live' && classesQuery.error ? (
         <Alert type="warning" showIcon message="IngressClass 数据加载失败" />
       ) : null}
 
@@ -233,7 +233,7 @@ export function IngressClassesPage() {
         columns={columns}
         rowKey={(record) => record.name}
         loading={
-          sessionMode === 'token' && (classesQuery.isLoading || ingressesQuery.isLoading)
+          dataMode === 'live' && (classesQuery.isLoading || ingressesQuery.isLoading)
         }
         onRefresh={() => {
           void classesQuery.refetch();

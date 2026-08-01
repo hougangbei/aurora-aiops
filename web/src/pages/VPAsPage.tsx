@@ -33,26 +33,26 @@ function displayNamespace(namespace: string) {
 export function VPAsPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [yamlEditTarget, setYamlEditTarget] = useState<VPAItem>();
 
   const vpasQuery = useQuery({
     queryKey: ['vpas', currentNamespace],
     queryFn: () => listVPAs(currentNamespace),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
 
   const readinessQuery = useQuery({
     queryKey: ['vpa-readiness'],
     queryFn: () => readVPAReadiness(),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
 
   const vpaYamlQuery = useQuery({
     queryKey: ['vpa-yaml', yamlEditTarget?.namespace, yamlEditTarget?.name],
     queryFn: () => readVPAYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
-    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
+    enabled: dataMode === 'live' && Boolean(yamlEditTarget),
   });
 
   const updateVPAYamlMutation = useMutation({
@@ -74,7 +74,7 @@ export function VPAsPage() {
     },
   });
 
-  const items = sessionMode === 'token' ? vpasQuery.data ?? [] : [];
+  const items = dataMode === 'live' ? vpasQuery.data ?? [] : [];
   const namespaceLabel = displayNamespace(currentNamespace);
 
   const metrics = useMemo<ResourceMetric[]>(() => {
@@ -201,7 +201,7 @@ export function VPAsPage() {
       width: 124,
       fixed: 'right',
       render: (_, item) =>
-        sessionMode === 'token' ? (
+        dataMode === 'live' ? (
           <ActionMenuButton
             loading={updateVPAYamlMutation.isPending || deleteMutation.isPending}
             menu={{
@@ -245,11 +245,11 @@ export function VPAsPage() {
 
   return (
     <section className="space-y-5">
-      {sessionMode === 'token' && vpasQuery.error ? (
+      {dataMode === 'live' && vpasQuery.error ? (
         <Alert type="warning" showIcon message="VPA 数据加载失败" />
       ) : null}
 
-      {sessionMode === 'token' && readinessQuery.data && readinessQuery.data.status !== 'healthy' ? (
+      {dataMode === 'live' && readinessQuery.data && readinessQuery.data.status !== 'healthy' ? (
         <Alert
           type={readinessQuery.data.status === 'error' ? 'error' : 'warning'}
           showIcon
@@ -269,7 +269,7 @@ export function VPAsPage() {
         dataSource={items}
         columns={columns}
         rowKey={(record) => `${record.namespace}/${record.name}`}
-        loading={sessionMode === 'token' && vpasQuery.isLoading}
+        loading={dataMode === 'live' && vpasQuery.isLoading}
         onRefresh={() => vpasQuery.refetch()}
         toolbarExtra={
           <Space size={[8, 8]} wrap>
@@ -282,7 +282,7 @@ export function VPAsPage() {
             <ResourceYamlCreateButton
               resourceKind="VerticalPodAutoscaler"
               namespace={currentNamespace}
-              enabled={sessionMode === 'token'}
+              enabled={dataMode === 'live'}
               onCreated={() => vpasQuery.refetch()}
             />
           </Space>

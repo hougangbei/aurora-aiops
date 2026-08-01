@@ -96,14 +96,14 @@ export function ClusterRoleDetailsPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
   const params = useParams();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
 
   const name = decodeRouteParam(params.name);
 
   const [activeTab, setActiveTab] = useState<ClusterRoleDetailsTabKey>('overview');
   const [yamlEditOpen, setYamlEditOpen] = useState(false);
 
-  const allowLiveAccess = sessionMode === 'token';
+  const allowLiveAccess = dataMode === 'live';
 
   const rolesQuery = useQuery({
     queryKey: ['clusterrole-detail-list'],

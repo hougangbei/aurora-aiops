@@ -34,20 +34,20 @@ function selectorSummary(item: NetworkPolicyItem) {
 export function NetworkPoliciesPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
   const [yamlEditTarget, setYamlEditTarget] = useState<NetworkPolicyItem>();
 
   const networkPoliciesQuery = useQuery({
     queryKey: ['networkpolicies', currentNamespace],
     queryFn: () => getNetworkPolicies(currentNamespace),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
 
   const networkPolicyYamlQuery = useQuery({
     queryKey: ['networkpolicy-yaml', yamlEditTarget?.namespace, yamlEditTarget?.name],
     queryFn: () => getNetworkPolicyYaml(yamlEditTarget!.namespace, yamlEditTarget!.name),
-    enabled: sessionMode === 'token' && Boolean(yamlEditTarget),
+    enabled: dataMode === 'live' && Boolean(yamlEditTarget),
   });
 
   const updateNetworkPolicyYamlMutation = useMutation({
@@ -70,7 +70,7 @@ export function NetworkPoliciesPage() {
     },
   });
 
-  const items = sessionMode === 'token' ? networkPoliciesQuery.data ?? [] : [];
+  const items = dataMode === 'live' ? networkPoliciesQuery.data ?? [] : [];
   const namespaceLabel = displayNamespace(currentNamespace);
 
   const metrics = useMemo<ResourceMetric[]>(() => {
@@ -184,7 +184,7 @@ export function NetworkPoliciesPage() {
       width: 124,
       fixed: 'right',
       render: (_, item) =>
-        sessionMode === 'token' ? (
+        dataMode === 'live' ? (
           <ActionMenuButton
             loading={updateNetworkPolicyYamlMutation.isPending || deleteMutation.isPending}
             menu={{
@@ -228,7 +228,7 @@ export function NetworkPoliciesPage() {
 
   return (
     <section className="space-y-5">
-      {sessionMode === 'token' && networkPoliciesQuery.error ? (
+      {dataMode === 'live' && networkPoliciesQuery.error ? (
         <Alert type="warning" showIcon message="NetworkPolicy 数据加载失败" />
       ) : null}
 
@@ -239,7 +239,7 @@ export function NetworkPoliciesPage() {
         dataSource={items}
         columns={columns}
         rowKey={(record) => `${record.namespace}/${record.name}`}
-        loading={sessionMode === 'token' && networkPoliciesQuery.isLoading}
+        loading={dataMode === 'live' && networkPoliciesQuery.isLoading}
         onRefresh={() => networkPoliciesQuery.refetch()}
         toolbarExtra={
           <Space size={8} wrap>
@@ -247,7 +247,7 @@ export function NetworkPoliciesPage() {
             <ResourceYamlCreateButton
               resourceKind="NetworkPolicy"
               namespace={currentNamespace}
-              enabled={sessionMode === 'token'}
+              enabled={dataMode === 'live'}
               onCreated={() => networkPoliciesQuery.refetch()}
             />
           </Space>

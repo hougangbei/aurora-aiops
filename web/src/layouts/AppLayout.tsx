@@ -148,19 +148,19 @@ export function AppLayout({ children }: PropsWithChildren) {
   const setNamespace = useAppStore((state) => state.setNamespace);
   const userName = useAppStore((state) => state.userName);
   const setUserName = useAppStore((state) => state.setUserName);
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const clearSession = useAppStore((state) => state.clearSession);
 
   const authQuery = useQuery({
     queryKey: ['auth-me'],
     queryFn: getAuthMe,
-    enabled: sessionMode === 'token' && authenticated,
+    enabled: dataMode === 'live' && authenticated,
   });
 
   const namespacesQuery = useQuery({
     queryKey: ['namespaces'],
     queryFn: getNamespaces,
-    enabled: sessionMode === 'token' && authenticated,
+    enabled: dataMode === 'live' && authenticated,
   });
 
   useEffect(() => {
@@ -178,7 +178,7 @@ export function AppLayout({ children }: PropsWithChildren) {
         : undefined;
 
     if (
-      sessionMode === 'token' &&
+      dataMode === 'live' &&
       [authStatus, namespacesStatus].some((status) => status === 401 || status === 403)
     ) {
       queryClient.clear();
@@ -191,11 +191,11 @@ export function AppLayout({ children }: PropsWithChildren) {
     navigate,
     namespacesQuery.error,
     queryClient,
-    sessionMode,
+    dataMode,
   ]);
 
   const namespaceOptions =
-    sessionMode === 'demo' ? demoNamespaces : namespacesQuery.data ?? [];
+    dataMode === 'demo' ? demoNamespaces : namespacesQuery.data ?? [];
 
   const activeItem = useMemo(() => findNavigationItem(location.pathname), [location.pathname]);
   const activeSectionKey =
@@ -291,7 +291,7 @@ export function AppLayout({ children }: PropsWithChildren) {
                   onChange={setNamespace}
                 />
               </Space>
-              <Tag color={sessionMode === 'demo' ? 'gold' : 'geekblue'} className="rounded-full px-3 py-1">
+              <Tag color={dataMode === 'demo' ? 'gold' : 'geekblue'} className="rounded-full px-3 py-1">
                 {userName}
               </Tag>
               <Button icon={<LogoutOutlined />} onClick={handleLogout}>

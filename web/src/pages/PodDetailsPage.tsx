@@ -64,7 +64,7 @@ export function PodDetailsPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
   const params = useParams();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const currentNamespace = useAppStore((state) => state.namespace);
 
   const namespace = decodeRouteParam(params.namespace);
@@ -77,12 +77,12 @@ export function PodDetailsPage() {
   const podListQuery = useQuery({
     queryKey: ['pod-detail-list', namespace],
     queryFn: () => getPods(namespace),
-    enabled: sessionMode === 'token' && Boolean(namespace),
+    enabled: dataMode === 'live' && Boolean(namespace),
   });
   const useDemoData =
-    sessionMode === 'demo' ||
-    (sessionMode === 'token' && Boolean(podListQuery.error) && !podListQuery.data);
-  const allowLiveAccess = sessionMode === 'token' && !useDemoData;
+    dataMode === 'demo' ||
+    (dataMode === 'live' && Boolean(podListQuery.error) && !podListQuery.data);
+  const allowLiveAccess = dataMode === 'live' && !useDemoData;
 
   const podItem = useMemo<PodItem | undefined>(() => {
     const source = useDemoData ? demoPods : podListQuery.data ?? [];
@@ -103,7 +103,7 @@ export function PodDetailsPage() {
   }, [logContainer, podItem]);
 
   const refreshPod = async () => {
-    if (sessionMode === 'token') {
+    if (dataMode === 'live') {
       await podListQuery.refetch();
     }
   };
@@ -219,7 +219,7 @@ export function PodDetailsPage() {
         }
       : podDescribeQuery.data;
 
-  if (sessionMode === 'token' && podListQuery.isLoading) {
+  if (dataMode === 'live' && podListQuery.isLoading) {
     return (
       <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_12px_36px_rgba(15,23,42,0.05)]">
         <Typography.Paragraph className="!mb-0 text-sm text-slate-500">
@@ -232,7 +232,7 @@ export function PodDetailsPage() {
   if (!podItem) {
     return (
       <section className="space-y-4">
-        {sessionMode === 'token' && podListQuery.error ? (
+        {dataMode === 'live' && podListQuery.error ? (
           <Alert type="warning" showIcon message="Pod 详情加载失败" />
         ) : null}
         <section className="rounded-[24px] border border-slate-200 bg-white p-8 shadow-[0_12px_36px_rgba(15,23,42,0.05)]">
@@ -266,7 +266,7 @@ export function PodDetailsPage() {
 
   return (
     <section className="space-y-4">
-      {sessionMode === 'token' && useDemoData ? (
+      {dataMode === 'live' && useDemoData ? (
         <Alert
           type="warning"
           showIcon

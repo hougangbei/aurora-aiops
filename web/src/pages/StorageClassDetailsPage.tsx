@@ -45,14 +45,14 @@ export function StorageClassDetailsPage() {
   const { message } = App.useApp();
   const navigate = useNavigate();
   const params = useParams();
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
 
   const name = decodeRouteParam(params.name);
 
   const [activeTab, setActiveTab] = useState<StorageClassDetailsTabKey>('overview');
   const [yamlEditOpen, setYamlEditOpen] = useState(false);
 
-  const allowLiveAccess = sessionMode === 'token';
+  const allowLiveAccess = dataMode === 'live';
 
   const classesQuery = useQuery({
     queryKey: ['storageclass-detail-list'],

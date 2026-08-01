@@ -526,7 +526,7 @@ function FloatingPanel({
 function TopologyWorkspace() {
   const navigate = useNavigate();
   const namespace = useAppStore((state) => state.namespace);
-  const sessionMode = useAppStore((state) => state.sessionMode);
+  const dataMode = useAppStore((state) => state.dataMode);
   const reactFlow = useReactFlow<Node<TopologyFlowNodeData>, Edge>();
   const viewport = useTopologyGraphViewport();
   const viewportMovedRef = useRef(false);
@@ -554,9 +554,9 @@ function TopologyWorkspace() {
     edges: [],
   });
   const topologyQuery = useQuery({
-    queryKey: ['topology-graph', namespace, sessionMode],
+    queryKey: ['topology-graph', namespace, dataMode],
     queryFn: () => getTopologyGraph(namespace, defaultSources),
-    enabled: sessionMode === 'token',
+    enabled: dataMode === 'live',
   });
 
   const clearCanvasMotion = () => {
@@ -897,7 +897,7 @@ function TopologyWorkspace() {
     </div>
   );
 
-  if (sessionMode !== 'token') {
+  if (dataMode !== 'live') {
     return (
       <section className="space-y-4">
         <Alert

@@ -12,14 +12,13 @@ type AppState = {
   user: PlatformUser | null;
   namespace: string;
   userName: string;
-  // sessionMode 是历史枚举名，仅作为“演示数据/实时数据”兼容开关：
-  // 'token' 只是历史命名，不再包含任何凭证，也不驱动认证。
-  // 计划 03 将重命名为 dataMode: 'demo' | 'live'。
-  sessionMode: 'demo' | 'token';
+  // dataMode 是“演示数据/实时数据”兼容开关：'demo' 展示内置数据，
+  // 'live' 才走真实 API。不再包含任何凭证，也不驱动认证。
+  dataMode: 'demo' | 'live';
   setSession: (user: PlatformUser) => void;
   enterDemo: () => void;
   setUserName: (userName: string) => void;
-  setSessionMode: (sessionMode: 'demo' | 'token') => void;
+  setDataMode: (dataMode: 'demo' | 'live') => void;
   clearSession: () => void;
   setNamespace: (namespace: string) => void;
 };
@@ -31,13 +30,13 @@ export const useAppStore = create<AppState>()(
       user: null,
       namespace: 'default',
       userName: '当前用户',
-      sessionMode: 'demo',
+      dataMode: 'demo',
       setSession: (user) =>
         set({
           authenticated: true,
           user,
           userName: user.username,
-          sessionMode: 'token',
+          dataMode: 'live',
         }),
       enterDemo: () =>
         set({
@@ -45,16 +44,16 @@ export const useAppStore = create<AppState>()(
           user: { id: 'demo', username: '演示用户', role: 'viewer' },
           userName: '演示用户',
           namespace: 'default',
-          sessionMode: 'demo',
+          dataMode: 'demo',
         }),
       setUserName: (userName) => set({ userName }),
-      setSessionMode: (sessionMode) => set({ sessionMode }),
+      setDataMode: (dataMode) => set({ dataMode }),
       clearSession: () =>
         set({
           authenticated: false,
           user: null,
           namespace: 'default',
-          sessionMode: 'demo',
+          dataMode: 'demo',
           userName: '当前用户',
         }),
       setNamespace: (namespace) => set({ namespace }),

@@ -36,7 +36,7 @@ func newTestRouter(t *testing.T) (*gin.Engine, *sql.DB) {
 
 	router := gin.New()
 	api := router.Group("/api/v1")
-	registerAIOpsRoutes(api, svc)
+	registerAIOpsRoutes(api, aiopsRoutesDeps{svc: svc})
 
 	return router, db
 }

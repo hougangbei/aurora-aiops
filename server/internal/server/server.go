@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/heihuzicity-tech/kubejojo/server/internal/aiops"
@@ -12,7 +13,9 @@ import (
 	"github.com/heihuzicity-tech/kubejojo/server/internal/buildinfo"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/cluster"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/config"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/evidence"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/kube"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/llm"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/service"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/store"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/web"
@@ -54,11 +57,33 @@ func Run(info buildinfo.Info) error {
 		cfg.Cluster.Timeout,
 	)
 
-	aiopsService := aiops.NewService(aiops.NewRepository(db))
+	aiopsRepo := aiops.NewRepository(db)
+	aiopsService := aiops.NewService(aiopsRepo)
 	authService := auth.NewService(auth.NewRepository(db), sessionTTL, time.Now)
 	if err := bootstrapAdmin(cfg, authService); err != nil {
 		return err
 	}
+
+	llmClient, modelConfigured, err := buildLLMClient(cfg)
+	if err != nil {
+		return fmt.Errorf("initialize llm client: %w", err)
+	}
+	events := aiops.NewEventStore(db)
+	workflow := aiops.NewWorkflow(aiops.WorkflowOptions{
+		DB:        db,
+		Incidents: aiopsRepo,
+		Runs:      aiops.NewRunRepository(db),
+		Evidence:  evidence.NewRepository(db),
+		Collector: evidence.NewKubernetesCollector(
+			evidence.KubernetesPodAPI{Kube: sharedClient.Kubernetes, Metrics: sharedClient.Metrics},
+			cluster.Capabilities{Nodes: true, Events: true, PodLogs: true, Metrics: true},
+			cfg.Cluster.Timeout,
+		),
+		LLM:             llmClient,
+		ModelConfigured: modelConfigured,
+		Model:           cfg.LLM.Model,
+		Events:          events,
+	})
 
 	updateService := service.NewUpdateService(info, cfg.Update, web.HasEmbeddedFrontend())
 	systemLockService := service.NewSystemOperationLockService()
@@ -70,9 +95,36 @@ func Run(info buildinfo.Info) error {
 		updateService,
 		systemLockService,
 		aiopsService,
+		workflow,
+		events,
 		info,
 	)
 	return router.Run(cfg.HTTPAddr)
+}
+
+// buildLLMClient constructs the model client from config. An empty BaseURL
+// disables model-backed roles (deterministic triage/collector still run);
+// a configured but invalid endpoint fails startup so misconfiguration surfaces
+// immediately.
+func buildLLMClient(cfg config.Config) (aiops.LLMClient, bool, error) {
+	if strings.TrimSpace(cfg.LLM.BaseURL) == "" {
+		return nil, false, nil
+	}
+	style := llm.StyleChatCompletions
+	if cfg.LLM.Style != "" {
+		style = llm.APIStyle(cfg.LLM.Style)
+	}
+	client, err := llm.New(llm.Options{
+		BaseURL: cfg.LLM.BaseURL,
+		APIKey:  cfg.LLM.APIKey,
+		Model:   cfg.LLM.Model,
+		Style:   style,
+		Timeout: cfg.LLM.Timeout,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return client, true, nil
 }
 
 // setupAIOps opens the SQLite database at dbPath and returns a ready-to-use

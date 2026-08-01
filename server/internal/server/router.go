@@ -74,6 +74,8 @@ func newRouter(
 	updateService *service.UpdateService,
 	systemLockService *service.SystemOperationLockService,
 	aiopsService *aiops.Service,
+	aiopsWorkflow *aiops.Workflow,
+	aiopsEvents *aiops.EventStore,
 	info buildinfo.Info,
 ) *gin.Engine {
 	_ = sharedClient
@@ -237,7 +239,11 @@ func newRouter(
 
 			// aiops 与业务路由全部迁入 Session 受保护组；仅 login 匿名。
 			registerSessionAuthRoutes(authorized, authService)
-			registerAIOpsRoutes(authorized, aiopsService)
+			registerAIOpsRoutes(authorized, aiopsRoutesDeps{
+				svc:      aiopsService,
+				workflow: aiopsWorkflow,
+				events:   aiopsEvents,
+			})
 			registerClusterRoutes(authorized, probe, clusterService)
 
 			{

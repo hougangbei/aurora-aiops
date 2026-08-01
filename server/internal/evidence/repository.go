@@ -24,6 +24,7 @@ type Repository interface {
 	ListNodes(ctx context.Context, incidentID string) ([]Node, error)
 	AddEdge(ctx context.Context, edge Edge) error
 	ListEdges(ctx context.Context, incidentID string) ([]Edge, error)
+	DeleteIncidentEvidence(ctx context.Context, incidentID string) error
 }
 
 type sqlRepository struct {
@@ -226,6 +227,16 @@ func (r *sqlRepository) wouldCreateCycle(ctx context.Context, tx *sql.Tx, edge E
 		return false, nil
 	}
 	return walk(edge.ToID)
+}
+
+// DeleteIncidentEvidence removes every evidence node for an incident; edges
+// cascade through their foreign keys. Used by reanalyze to restart collection.
+func (r *sqlRepository) DeleteIncidentEvidence(ctx context.Context, incidentID string) error {
+	if _, err := r.db.ExecContext(ctx,
+		`DELETE FROM evidence_nodes WHERE incident_id = ?`, incidentID); err != nil {
+		return fmt.Errorf("delete incident evidence: %w", err)
+	}
+	return nil
 }
 
 func (r *sqlRepository) ListEdges(ctx context.Context, incidentID string) ([]Edge, error) {

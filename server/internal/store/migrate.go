@@ -140,5 +140,24 @@ CREATE TABLE IF NOT EXISTS workflow_locks (
 		return err
 	}
 
+	_, err = db.Exec(`
+CREATE TABLE IF NOT EXISTS incident_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  incident_id TEXT NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  data TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+)`)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`
+CREATE INDEX IF NOT EXISTS idx_incident_events_incident
+ON incident_events(incident_id, id)`)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }

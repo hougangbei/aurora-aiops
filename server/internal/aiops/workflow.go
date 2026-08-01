@@ -68,6 +68,9 @@ type WorkflowOptions struct {
 	LLM             LLMClient // nil when no model is configured
 	ModelConfigured bool
 	Model           string
+	// Events, when non-nil, receives run_started/run_completed and incident
+	// events; every event is persisted before it is broadcast.
+	Events *EventStore
 }
 
 // Workflow runs the five diagnostic roles for an incident in strict order,
@@ -83,6 +86,7 @@ type Workflow struct {
 	llm             LLMClient
 	modelConfigured bool
 	model           string
+	events          *EventStore
 }
 
 // NewWorkflow returns a workflow bound to the given dependencies.
@@ -96,6 +100,7 @@ func NewWorkflow(opts WorkflowOptions) *Workflow {
 		llm:             opts.LLM,
 		modelConfigured: opts.ModelConfigured,
 		model:           opts.Model,
+		events:          opts.Events,
 	}
 }
 
@@ -113,7 +118,11 @@ func (w *Workflow) Run(ctx context.Context, incidentID string) error {
 		return ErrWorkflowLocked
 	}
 	defer w.releaseLock(ctx, incidentID)
+	return w.runLocked(ctx, incidentID)
+}
 
+// runLocked executes the role chain assuming the workflow lock is held.
+func (w *Workflow) runLocked(ctx context.Context, incidentID string) error {
 	inc, err := w.incidents.Get(ctx, incidentID)
 	if err != nil {
 		return err
@@ -130,7 +139,17 @@ func (w *Workflow) Run(ctx context.Context, incidentID string) error {
 			return err
 		}
 
-		err = w.executeStep(ctx, run, inc, step)
+		w.emit(ctx, inc.ID, EventRunStarted, mustJSON(map[string]any{
+			"id": run.ID, "role": run.Role, "attempt": run.Attempt,
+		}))
+
+		err = w.executeStep(ctx, &run, inc, step)
+
+		w.emit(ctx, inc.ID, EventRunCompleted, mustJSON(map[string]any{
+			"id": run.ID, "role": run.Role, "status": string(run.Status),
+			"summary": run.Summary, "error": run.Error,
+		}))
+
 		switch {
 		case err == nil:
 			// continue to the next role
@@ -144,7 +163,71 @@ func (w *Workflow) Run(ctx context.Context, incidentID string) error {
 		if err != nil {
 			return err
 		}
+		w.emit(ctx, inc.ID, EventIncidentUpdated, mustJSON(map[string]any{
+			"id": inc.ID, "status": string(inc.Status),
+		}))
 	}
+}
+
+// Reanalyze restarts the diagnostic workflow for a terminal incident. It clears
+// the collected evidence, resets the incident to received, and re-runs every
+// role. Only failed, rejected, and resolved incidents may be reanalyzed.
+func (w *Workflow) Reanalyze(ctx context.Context, incidentID string) error {
+	locked, err := w.acquireLock(ctx, incidentID)
+	if err != nil {
+		return err
+	}
+	if !locked {
+		return ErrWorkflowLocked
+	}
+	defer w.releaseLock(ctx, incidentID)
+
+	inc, err := w.incidents.Get(ctx, incidentID)
+	if err != nil {
+		return err
+	}
+	switch inc.Status {
+	case StatusFailed, StatusRejected, StatusResolved:
+	default:
+		return ErrReanalyzeNotAllowed
+	}
+
+	w.emit(ctx, incidentID, EventReanalyzeStarted, mustJSON(map[string]any{"id": incidentID}))
+
+	if err := w.evidence.DeleteIncidentEvidence(ctx, incidentID); err != nil {
+		return err
+	}
+	if err := w.incidents.UpdateStatus(ctx, incidentID, StatusReceived, time.Now().UTC()); err != nil {
+		return err
+	}
+	return w.runLocked(ctx, incidentID)
+}
+
+// EvidenceFor returns the persisted evidence DAG for an incident.
+func (w *Workflow) EvidenceFor(ctx context.Context, incidentID string) ([]evidence.Node, []evidence.Edge, error) {
+	nodes, err := w.evidence.ListNodes(ctx, incidentID)
+	if err != nil {
+		return nil, nil, err
+	}
+	edges, err := w.evidence.ListEdges(ctx, incidentID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return nodes, edges, nil
+}
+
+// RunsFor returns the persisted agent runs for an incident.
+func (w *Workflow) RunsFor(ctx context.Context, incidentID string) ([]AgentRun, error) {
+	return w.runs.ListRuns(ctx, incidentID)
+}
+
+// emit persists and broadcasts an event, ignoring failures: events must never
+// block the workflow.
+func (w *Workflow) emit(ctx context.Context, incidentID string, typ EventType, data string) {
+	if w.events == nil {
+		return
+	}
+	_, _ = w.events.Append(ctx, incidentID, typ, data)
 }
 
 // acquireLock inserts the per-incident lock row. It returns false when another
@@ -190,7 +273,7 @@ func (w *Workflow) beginRun(ctx context.Context, inc Incident, step roleStep) (A
 	return run, nil
 }
 
-func (w *Workflow) executeStep(ctx context.Context, run AgentRun, inc Incident, step roleStep) error {
+func (w *Workflow) executeStep(ctx context.Context, run *AgentRun, inc Incident, step roleStep) error {
 	if !w.modelConfigured && requiresModel(step.role) {
 		return w.skipModelUnavailable(ctx, run, inc)
 	}
@@ -214,10 +297,10 @@ func (w *Workflow) executeStep(ctx context.Context, run AgentRun, inc Incident, 
 // skipModelUnavailable records a skipped run for a model-backed role when no
 // model is configured, then stops the workflow: the incident stays where it is
 // (deterministic triage/collector finished) and no further role runs.
-func (w *Workflow) skipModelUnavailable(ctx context.Context, run AgentRun, inc Incident) error {
+func (w *Workflow) skipModelUnavailable(ctx context.Context, run *AgentRun, inc Incident) error {
 	run.Status = RunStatusSkipped
 	run.Summary = ModelUnavailable
-	if err := w.runs.CompleteRun(ctx, run, "", time.Now().UTC()); err != nil {
+	if err := w.runs.CompleteRun(ctx, *run, "", time.Now().UTC()); err != nil {
 		return err
 	}
 	return errWorkflowStopped
@@ -226,22 +309,22 @@ func (w *Workflow) skipModelUnavailable(ctx context.Context, run AgentRun, inc I
 // failRun records a role failure, moves the incident to the terminal failed
 // state, and stops the workflow. No remediation action is ever executed from
 // an invalid or errored model output.
-func (w *Workflow) failRun(ctx context.Context, run AgentRun, cause error) error {
+func (w *Workflow) failRun(ctx context.Context, run *AgentRun, cause error) error {
 	run.Status = RunStatusFailed
 	run.Error = cause.Error()
-	if err := w.runs.CompleteRun(ctx, run, StatusFailed, time.Now().UTC()); err != nil {
+	if err := w.runs.CompleteRun(ctx, *run, StatusFailed, time.Now().UTC()); err != nil {
 		return err
 	}
 	return errWorkflowStopped
 }
 
 // succeedRun records a successful role and advances the incident.
-func (w *Workflow) succeedRun(ctx context.Context, run AgentRun, step roleStep) error {
+func (w *Workflow) succeedRun(ctx context.Context, run *AgentRun, step roleStep) error {
 	run.Status = RunStatusSucceeded
-	return w.runs.CompleteRun(ctx, run, step.nextStatus, time.Now().UTC())
+	return w.runs.CompleteRun(ctx, *run, step.nextStatus, time.Now().UTC())
 }
 
-func (w *Workflow) runTriage(ctx context.Context, run AgentRun, inc Incident, step roleStep) error {
+func (w *Workflow) runTriage(ctx context.Context, run *AgentRun, inc Incident, step roleStep) error {
 	if !w.modelConfigured {
 		out := DeterministicTriage(inc)
 		run.Summary = out.Summary
@@ -256,13 +339,13 @@ func (w *Workflow) runTriage(ctx context.Context, run AgentRun, inc Incident, st
 	if err != nil {
 		return w.failRun(ctx, run, err)
 	}
-	applyModelUsage(&run, resp)
+	applyModelUsage(run, resp)
 	run.Summary = out.Summary
 	run.Output = mustJSON(out)
 	return w.succeedRun(ctx, run, step)
 }
 
-func (w *Workflow) runCollector(ctx context.Context, run AgentRun, inc Incident, step roleStep) error {
+func (w *Workflow) runCollector(ctx context.Context, run *AgentRun, inc Incident, step roleStep) error {
 	// Deterministic Kubernetes evidence collection always runs; optional
 	// capability failures yield partial evidence and are recorded, not fatal.
 	nodes, edges, collectErr := w.collector.Collect(ctx, evidence.Target{
@@ -305,7 +388,7 @@ func (w *Workflow) runCollector(ctx context.Context, run AgentRun, inc Incident,
 			return w.failRun(ctx, run, err)
 		}
 		out = decoded
-		applyModelUsage(&run, resp)
+		applyModelUsage(run, resp)
 	}
 
 	run.Summary = fmt.Sprintf("collected %d evidence nodes", len(nodes))
@@ -316,7 +399,7 @@ func (w *Workflow) runCollector(ctx context.Context, run AgentRun, inc Incident,
 	return w.succeedRun(ctx, run, step)
 }
 
-func (w *Workflow) runRootCause(ctx context.Context, run AgentRun, inc Incident, step roleStep) error {
+func (w *Workflow) runRootCause(ctx context.Context, run *AgentRun, inc Incident, step roleStep) error {
 	bundle := w.buildBundle(ctx, inc)
 	validIDs := evidenceIDs(bundle.Nodes)
 	resp, err := w.llm.GenerateJSON(ctx, w.chatRequest(BuildRootCausePrompt(formatBundle(bundle))))
@@ -327,13 +410,13 @@ func (w *Workflow) runRootCause(ctx context.Context, run AgentRun, inc Incident,
 	if err != nil {
 		return w.failRun(ctx, run, err)
 	}
-	applyModelUsage(&run, resp)
+	applyModelUsage(run, resp)
 	run.Summary = fmt.Sprintf("%d root cause candidate(s)", len(out.Candidates))
 	run.Output = mustJSON(out)
 	return w.succeedRun(ctx, run, step)
 }
 
-func (w *Workflow) runRemediation(ctx context.Context, run AgentRun, inc Incident, step roleStep) error {
+func (w *Workflow) runRemediation(ctx context.Context, run *AgentRun, inc Incident, step roleStep) error {
 	bundle := w.buildBundle(ctx, inc)
 	rootCause := w.latestRootCause(ctx, inc.ID)
 	resp, err := w.llm.GenerateJSON(ctx, w.chatRequest(BuildRemediationPrompt(formatBundle(bundle), rootCause)))
@@ -344,13 +427,13 @@ func (w *Workflow) runRemediation(ctx context.Context, run AgentRun, inc Inciden
 	if err != nil {
 		return w.failRun(ctx, run, err)
 	}
-	applyModelUsage(&run, resp)
+	applyModelUsage(run, resp)
 	run.Summary = fmt.Sprintf("%d remediation action(s)", len(out.Actions))
 	run.Output = mustJSON(out)
 	return w.succeedRun(ctx, run, step)
 }
 
-func (w *Workflow) runRiskReview(ctx context.Context, run AgentRun, inc Incident, step roleStep) error {
+func (w *Workflow) runRiskReview(ctx context.Context, run *AgentRun, inc Incident, step roleStep) error {
 	bundle := w.buildBundle(ctx, inc)
 	remediation := w.latestRemediation(ctx, inc.ID)
 	resp, err := w.llm.GenerateJSON(ctx, w.chatRequest(BuildRiskReviewPrompt(formatBundle(bundle), remediation)))
@@ -361,7 +444,7 @@ func (w *Workflow) runRiskReview(ctx context.Context, run AgentRun, inc Incident
 	if err != nil {
 		return w.failRun(ctx, run, err)
 	}
-	applyModelUsage(&run, resp)
+	applyModelUsage(run, resp)
 	run.Summary = fmt.Sprintf("risk %s, approved=%t", out.RiskLevel, out.Approved)
 	run.Output = mustJSON(out)
 	return w.succeedRun(ctx, run, step)

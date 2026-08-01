@@ -21,26 +21,27 @@ const (
 )
 
 var (
-	ErrRunNotFound    = errors.New("agent run not found")
-	ErrWorkflowLocked = errors.New("workflow already running for incident")
+	ErrRunNotFound         = errors.New("agent run not found")
+	ErrWorkflowLocked      = errors.New("workflow already running for incident")
+	ErrReanalyzeNotAllowed = errors.New("reanalyze not allowed for current incident status")
 )
 
 // AgentRun is one execution of a diagnostic role for an incident.
 type AgentRun struct {
-	ID               string
-	IncidentID       string
-	Role             string
-	Attempt          int
-	Status           RunStatus
-	Summary          string
-	Output           string
-	Model            string
-	PromptTokens     int
-	CompletionTokens int
-	TotalTokens      int
-	Error            string
-	StartedAt        time.Time
-	CompletedAt      time.Time
+	ID               string    `json:"id"`
+	IncidentID       string    `json:"incidentId"`
+	Role             string    `json:"role"`
+	Attempt          int       `json:"attempt"`
+	Status           RunStatus `json:"status"`
+	Summary          string    `json:"summary"`
+	Output           string    `json:"output"`
+	Model            string    `json:"model"`
+	PromptTokens     int       `json:"promptTokens"`
+	CompletionTokens int       `json:"completionTokens"`
+	TotalTokens      int       `json:"totalTokens"`
+	Error            string    `json:"error"`
+	StartedAt        time.Time `json:"startedAt"`
+	CompletedAt      time.Time `json:"completedAt"`
 }
 
 // RunRepository persists agent runs. CompleteRun writes the finished run and

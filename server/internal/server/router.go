@@ -18,6 +18,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/heihuzicity-tech/kubejojo/server/internal/aiops"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/buildinfo"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/jsonx"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/kube"
@@ -81,6 +82,7 @@ func newRouter(
 	clusterFactory *kube.Factory,
 	updateService *service.UpdateService,
 	systemLockService *service.SystemOperationLockService,
+	aiopsService *aiops.Service,
 	info buildinfo.Info,
 ) *gin.Engine {
 	router := gin.New()
@@ -265,6 +267,8 @@ func newRouter(
 				},
 			}.ServeHTTP(c.Writer, c.Request)
 		})
+
+		registerAIOpsRoutes(api, aiopsService)
 
 		authorized := api.Group("/")
 		authorized.Use(clusterServiceMiddleware(clusterFactory))

@@ -33,6 +33,7 @@ import (
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 	"sigs.k8s.io/yaml"
 
+	"github.com/heihuzicity-tech/kubejojo/server/internal/cluster"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/jsonx"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/kube"
 )
@@ -1103,7 +1104,7 @@ func (s *ClusterService) ListNodes(ctx context.Context) ([]NodeItem, error) {
 		nodeItem := NodeItem{
 			Name:              item.Name,
 			Role:              nodeRole(item),
-			IP:                internalIP(item),
+			IP:                cluster.SelectNodeAddress(item.Status.Addresses).Address,
 			Status:            readyStatus(item),
 			Ready:             ready,
 			Schedulable:       schedulable,
@@ -5186,16 +5187,6 @@ func nodeRole(node corev1.Node) string {
 	}
 
 	return "worker"
-}
-
-func internalIP(node corev1.Node) string {
-	for _, address := range node.Status.Addresses {
-		if address.Type == corev1.NodeInternalIP {
-			return address.Address
-		}
-	}
-
-	return ""
 }
 
 func readyStatus(node corev1.Node) string {

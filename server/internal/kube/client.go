@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -21,6 +22,14 @@ type Client struct {
 	RawConfig   clientcmdapiConfig
 }
 
+// Options holds connection parameters applied to the shared client's REST
+// configuration. A zero value leaves the corresponding field untouched.
+type Options struct {
+	Timeout time.Duration
+	QPS     float32
+	Burst   int
+}
+
 type Factory struct {
 	configPath string
 	rawConfig  clientcmdapiConfig
@@ -30,6 +39,45 @@ type Factory struct {
 type clientcmdapiConfig struct {
 	CurrentContext string
 	AuthInfoName   string
+}
+
+// NewSharedClient builds a single cluster client whose Kubernetes identity
+// comes entirely from the shared kubeconfig. It is created once at process
+// start and reused for every request; no request-level token overrides apply.
+func NewSharedClient(configPath string, options Options) (*Client, error) {
+	if configPath == "" {
+		return nil, fmt.Errorf("kubeconfig path is empty")
+	}
+
+	rawConfig, err := clientcmd.LoadFromFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("load kubeconfig: %w", err)
+	}
+
+	restConfig, err := clientcmd.BuildConfigFromFlags("", configPath)
+	if err != nil {
+		return nil, fmt.Errorf("build rest config: %w", err)
+	}
+
+	if options.Timeout != 0 {
+		restConfig.Timeout = options.Timeout
+	}
+	if options.QPS != 0 {
+		restConfig.QPS = options.QPS
+	}
+	if options.Burst != 0 {
+		restConfig.Burst = options.Burst
+	}
+
+	contextName, authInfoName := rawConfig.CurrentContext, ""
+	if current, ok := rawConfig.Contexts[contextName]; ok {
+		authInfoName = current.AuthInfo
+	}
+
+	return newClient(restConfig, configPath, "shared-kubeconfig", clientcmdapiConfig{
+		CurrentContext: contextName,
+		AuthInfoName:   authInfoName,
+	})
 }
 
 func NewFactory(configPath string) (*Factory, error) {

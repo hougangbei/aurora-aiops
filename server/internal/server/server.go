@@ -14,7 +14,10 @@ import (
 )
 
 func Run(info buildinfo.Info) error {
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
 
 	clusterFactory, err := kube.NewFactory(cfg.KubeconfigPath)
 	if err != nil {

@@ -159,5 +159,20 @@ ON incident_events(incident_id, id)`)
 		return err
 	}
 
+	_, err = db.Exec(`
+CREATE TABLE IF NOT EXISTS audit_records (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  actor TEXT NOT NULL,
+  action TEXT NOT NULL,
+  target TEXT NOT NULL,
+  result TEXT NOT NULL,
+  payload TEXT NOT NULL DEFAULT '',
+  timestamp TEXT NOT NULL,
+  hash TEXT NOT NULL
+)`)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }

@@ -36,6 +36,7 @@ import { AIOpsAuditPage } from '../pages/AIOpsAuditPage';
 import { AIOpsExperimentsPage } from '../pages/AIOpsExperimentsPage';
 import { AIOpsOverviewPage } from '../pages/AIOpsOverviewPage';
 import { AIOpsSettingsPage } from '../pages/AIOpsSettingsPage';
+import { EvidenceGraphPage } from '../pages/EvidenceGraphPage';
 import { IncidentDetailsPage } from '../pages/IncidentDetailsPage';
 import { IncidentsPage } from '../pages/IncidentsPage';
 import { PersistentVolumeClaimDetailsPage } from '../pages/PersistentVolumeClaimDetailsPage';
@@ -176,6 +177,7 @@ function ProtectedRoutes() {
         <Route path="/topology" element={<TopologyPage />} />
         <Route path="/aiops/overview" element={<AIOpsOverviewPage />} />
         <Route path="/aiops/incidents" element={<IncidentsPage />} />
+        <Route path="/aiops/incidents/:id/evidence" element={<EvidenceGraphPage />} />
         <Route path="/aiops/incidents/:id" element={<IncidentDetailsPage />} />
         <Route path="/aiops/approvals" element={<AIOpsApprovalsPage />} />
         <Route path="/aiops/experiments" element={<AIOpsExperimentsPage />} />

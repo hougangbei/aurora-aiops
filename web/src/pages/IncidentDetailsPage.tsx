@@ -2,7 +2,7 @@ import { ReloadOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, App, Button, Card, Descriptions, Space, Spin, Tag, Typography } from 'antd';
 import { useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 
 import { AgentTimeline } from '../modules/aiops/components/AgentTimeline';
 import { IncidentStatusTag } from '../modules/aiops/components/IncidentStatusTag';
@@ -19,6 +19,7 @@ const severityColor: Record<string, string> = { info: 'blue', warning: 'orange',
 
 export function IncidentDetailsPage() {
   const { id = '' } = useParams();
+  const navigate = useNavigate();
   const dataMode = useAppStore((state) => state.dataMode);
   const queryClient = useQueryClient();
   const { modal, message } = App.useApp();
@@ -143,13 +144,23 @@ export function IncidentDetailsPage() {
         <RemediationPanel run={remediationRun} />
       </Card>
 
-      <Card title="证据图" size="small" extra={evidenceQuery.data ? `${evidenceQuery.data.nodes.length} 节点 / ${evidenceQuery.data.edges.length} 边` : undefined}>
+      <Card
+        title="证据图"
+        size="small"
+        extra={
+          <Button size="small" type="link" onClick={() => navigate(`/aiops/incidents/${id}/evidence`)}>
+            查看证据图 →
+          </Button>
+        }
+      >
         {dataMode === 'demo' ? (
           <Typography.Text type="secondary">演示模式不展示证据图。</Typography.Text>
         ) : evidenceQuery.isLoading ? (
           <Spin />
         ) : (
-          <Typography.Text type="secondary">证据图视图在后续任务接入。</Typography.Text>
+          <Typography.Text type="secondary">
+            {evidenceQuery.data ? `${evidenceQuery.data.nodes.length} 节点 / ${evidenceQuery.data.edges.length} 边` : '暂无证据'}
+          </Typography.Text>
         )}
       </Card>
     </section>

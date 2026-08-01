@@ -68,11 +68,21 @@ func MapNode(node corev1.Node) Node {
 		Role:            nodeRole(node),
 		Status:          readyStatus(node),
 		InternalAddress: SelectNodeAddress(node.Status.Addresses),
-		Hostname:        nodeHostname(node.Status.Addresses),
+		Hostname:        SelectNodeHostname(node.Status.Addresses),
 		OSImage:         node.Status.NodeInfo.OSImage,
 		KernelVersion:   node.Status.NodeInfo.KernelVersion,
 		KubeletVersion:  node.Status.NodeInfo.KubeletVersion,
 	}
+}
+
+// SelectNodeHostname returns the NodeHostName address, or "" when absent.
+func SelectNodeHostname(addresses []corev1.NodeAddress) string {
+	for _, address := range addresses {
+		if address.Type == corev1.NodeHostName && strings.TrimSpace(address.Address) != "" {
+			return address.Address
+		}
+	}
+	return ""
 }
 
 func nodeRole(node corev1.Node) string {
@@ -97,13 +107,4 @@ func readyStatus(node corev1.Node) string {
 		return status + ",SchedulingDisabled"
 	}
 	return status
-}
-
-func nodeHostname(addresses []corev1.NodeAddress) string {
-	for _, address := range addresses {
-		if address.Type == corev1.NodeHostName && strings.TrimSpace(address.Address) != "" {
-			return address.Address
-		}
-	}
-	return ""
 }

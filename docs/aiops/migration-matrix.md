@@ -17,9 +17,9 @@
 
 | qd 接口 | 迁移状态 | 备注 |
 | --- | --- | --- |
-| `POST /api/auth/login` | `reference` | 计划 01A 用本地账号密码 + Session 替换 |
-| `GET /api/auth/me` | `reference` | 计划 01A |
-| `POST /api/auth/logout` | `reference` | 计划 01A |
+| `POST /api/auth/login` | `implemented-in-go` | `POST /api/v1/auth/login`，账号密码 + HttpOnly Session Cookie |
+| `GET /api/auth/me` | `implemented-in-go` | `GET /api/v1/auth/me`，返回平台用户 `{id, username, role}` |
+| `POST /api/auth/logout` | `implemented-in-go` | `POST /api/v1/auth/logout` |
 | `GET /api/audit-logs` | `reference` | 计划 04 审批/审计能力 |
 
 ## 集群 / 节点 / 资源域
@@ -28,15 +28,15 @@
 | --- | --- | --- |
 | `GET /api/health` | `intentionally-dropped` | kubejojo 已有等价健康探针 |
 | `GET /api/cluster/summary` | `intentionally-dropped` | kubejojo 集群总览已覆盖 |
-| `GET /api/cluster/connection` | `reference` | 计划 01A 共享 kubeconfig 与连接探测 |
-| `PUT /api/cluster/connection` | `reference` | 计划 01A |
-| `POST /api/cluster/connection/test` | `reference` | 计划 01A |
-| `POST /api/cluster/connection/refresh-kubeconfig` | `reference` | 计划 01A |
+| `GET /api/cluster/connection` | `implemented-in-go` | `GET /api/v1/cluster/connection`，共享 kubeconfig 探测（30s 缓存） |
+| `PUT /api/cluster/connection` | `intentionally-dropped` | 连接参数改为进程启动时由环境变量固定，不再由前端改写 |
+| `POST /api/cluster/connection/test` | `implemented-in-go` | `POST /api/v1/cluster/connection/test`，需 operator/admin |
+| `POST /api/cluster/connection/refresh-kubeconfig` | `intentionally-dropped` | 共享 kubeconfig 由部署方管理，运行期不重刷 |
 | `GET /api/cluster/capabilities` | `intentionally-dropped` | 迁移期能力探测，kubejojo 直接面向集群 |
 | `GET /api/cluster/validation-resources` | `intentionally-dropped` | 交付物已归档，非运行时接口 |
 | `GET /api/cluster/validation-resources/details` | `intentionally-dropped` | 同上 |
-| `GET /api/nodes` | `intentionally-dropped` | kubejojo 节点列表已覆盖 |
-| `GET /api/nodes/:name` | `intentionally-dropped` | 同上 |
+| `GET /api/nodes` | `implemented-in-go` | `GET /api/v1/nodes`，既有富 `NodeItem` 已携带 `internalAddress`/`hostname`（地址来自共享 `SelectNodeAddress`） |
+| `GET /api/nodes/:name` | `intentionally-dropped` | kubejojo 节点详情已覆盖 |
 | `GET /api/nodes/:name/metrics` | `intentionally-dropped` | kubejojo 指标能力已覆盖 |
 | `GET /api/nodes/:name/snapshots` | `reference` | 计划 04 故障实验快照 |
 | `POST /api/nodes/:name/snapshots` | `reference` | 计划 04 |
@@ -96,3 +96,16 @@
 | `GET /api/v1/aiops/incidents/:id` | `GET /api/aiops/incidents/:id` | 单条查询，404 `INCIDENT_NOT_FOUND` |
 
 文档与错误码见 `docs/aiops/api-v1.md`。
+
+## 明确丢弃的 SSH / 节点直连耦合
+
+qd 通过硬编码端口映射到节点并 SSH 执行 kubectl。该通道不属于 Kubernetes API 接入模型，且环境硬编码，全部 `intentionally-dropped`：
+
+| qd 耦合 | 迁移状态 | 说明 |
+| --- | --- | --- |
+| `NODE_PORTS`（7788/7789/7790） | `intentionally-dropped` | 节点端口环境硬编码，Go 侧完全走 API Server |
+| `ssh -p <port> root@127.0.0.1` 隧道 | `intentionally-dropped` | 后端不 SSH 任何节点 |
+| `StrictHostKeyChecking=no` | `intentionally-dropped` | 不建立不安全主机信任 |
+| 节点名 → 端口映射表 | `intentionally-dropped` | 节点发现只来自 Node API |
+
+本阶段完成标准：用户只用平台账号密码登录；后端只创建一个共享 Kubernetes 客户端；节点 InternalIP 只来源于 Node API；关闭 qd SSH 隧道不影响任何 Go API；Metrics 缺失可降级；平台 actor 与共享 Kubernetes 身份在审计中可区分。

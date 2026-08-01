@@ -1,15 +1,29 @@
 # AIOps API v1
 
-本页记录 kubejojo Go 后端已实现的 `/api/v1/aiops` 接口。当前阶段（计划 01）只落地 Incident 的创建与查询；审批、执行、工具调用、ChatOps、集成配置在后续计划中实现。
+本页记录 kubejojo Go 后端已实现的 `/api/v1` 接口。当前阶段（计划 01 + 01A）落地了 Incident 的创建与查询、平台账号登录、共享集群连接状态与节点发现；审批、执行、工具调用、ChatOps、集成配置在后续计划中实现。
 
 所有接口返回统一信封 `{code, message, data}`：
 
 - 成功：`code = "OK"`，`message = "success"`，`data` 为资源或资源数组（空列表必须是 `[]`，不会是 `null`）。
 - 失败：`code` 为业务错误码，`message` 为可读错误信息，`data` 省略。
 
-## 认证入口（临时）
+## 认证入口
 
-当前 `/api/v1` 路由沿用 kubejojo 现有的请求级 Kubernetes Token 中间件，仅作为迁移期间临时入口。**本认证方式将在计划 01A 中被平台账号 + HttpOnly Session Cookie 替换**，届时所有页面通过服务端共享 kubeconfig 访问集群，不再要求请求携带集群 Token。前端不得依赖本入口的 Token 字段。
+平台使用账号密码 + 服务端 Session。`POST /api/v1/auth/login` 是 `/api/v1` 下唯一匿名入口，登录成功后通过 `Set-Cookie: kubejojo_session`（HttpOnly + SameSite=Lax）建立会话。其余接口均需携带该 Cookie；后端通过共享 kubeconfig 访问集群，**不再接收任何请求级 Kubernetes Token**。前端 Axios 使用 `withCredentials: true` 同源携带 Cookie。
+
+### 账号 API
+
+- `POST /api/v1/auth/login`：请求体 `{username, password}`。成功 200，`data` 为 `{id, username, role, expiresAt}` 并设置 Session Cookie；失败统一 401 `INVALID_CREDENTIALS`（未知用户与错误密码不可区分）。
+- `GET /api/v1/auth/me`：需要 Session，返回当前 `{id, username, role}`。
+- `POST /api/v1/auth/logout`：需要 Session，删除服务端会话并清空 Cookie。
+
+### 集群连接 / 节点 API
+
+- `GET /api/v1/cluster/connection`：返回最近一次探测缓存（最长 30 秒）。`connected` / `degraded` 返回 200；`unreachable` 返回 503 `CLUSTER_UNREACHABLE`；权限不足返回 503 `CLUSTER_PERMISSION_DENIED`。Metrics 不可用只降级，不判定离线。
+- `POST /api/v1/cluster/connection/test`：立即探测，需 `operator` / `admin`；并发探测合并为一次。
+- `GET /api/v1/nodes`：返回节点数组，每项是既有富模型 `NodeItem` 的超集（含 `internalAddress`、`hostname`，其中 `ip`/`internalAddress` 来自共享 `cluster.SelectNodeAddress`），空数组为 `[]`；不执行任何主机命令。
+
+架构与安全边界见 `docs/architecture/single-cluster-access.md`。
 
 ## 通用错误码
 

@@ -72,7 +72,6 @@ func registerClusterRoutes(
 		RequireRoles(auth.RoleOperator, auth.RoleAdmin),
 		handleTestConnection(cache, probe),
 	)
-	group.GET("/nodes", handleListNodes(clusterService))
 }
 
 func handleGetConnection(cache *probeCache, probe *cluster.Probe) gin.HandlerFunc {
@@ -100,17 +99,6 @@ func handleTestConnection(cache *probeCache, probe *cluster.Probe) gin.HandlerFu
 			return
 		}
 		c.JSON(http.StatusOK, response.Success(result))
-	}
-}
-
-func handleListNodes(clusterService *service.ClusterService) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		nodes, err := clusterService.ListPlatformNodes(c.Request.Context())
-		if err != nil {
-			c.JSON(http.StatusServiceUnavailable, response.Failure("CLUSTER_UNREACHABLE", "节点列表不可用"))
-			return
-		}
-		c.JSON(http.StatusOK, response.Success(nodes))
 	}
 }
 

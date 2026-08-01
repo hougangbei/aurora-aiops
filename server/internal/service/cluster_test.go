@@ -116,6 +116,12 @@ func TestListNodesIPMatchesClusterAddressRule(t *testing.T) {
 	if items[0].IP != want {
 		t.Fatalf("ListNodes IP=%q, cluster.SelectNodeAddress=%q", items[0].IP, want)
 	}
+	if items[0].InternalAddress.Address != want {
+		t.Fatalf("ListNodes InternalAddress=%+v, want address %q", items[0].InternalAddress, want)
+	}
+	if items[0].Hostname != "node-1" {
+		t.Fatalf("ListNodes Hostname=%q", items[0].Hostname)
+	}
 }
 
 func TestSanitizeManifestYAML(t *testing.T) {

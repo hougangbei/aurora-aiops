@@ -53,6 +53,8 @@ type NodeItem struct {
 	Name               string                         `json:"name"`
 	Role               string                         `json:"role"`
 	IP                 string                         `json:"ip"`
+	InternalAddress    cluster.NodeAddress            `json:"internalAddress"`
+	Hostname           string                         `json:"hostname"`
 	Status             string                         `json:"status"`
 	Ready              bool                           `json:"ready"`
 	Schedulable        bool                           `json:"schedulable"`
@@ -1119,7 +1121,9 @@ func (s *ClusterService) ListNodes(ctx context.Context) ([]NodeItem, error) {
 		nodeItem := NodeItem{
 			Name:              item.Name,
 			Role:              nodeRole(item),
+			InternalAddress:   cluster.SelectNodeAddress(item.Status.Addresses),
 			IP:                cluster.SelectNodeAddress(item.Status.Addresses).Address,
+			Hostname:          cluster.SelectNodeHostname(item.Status.Addresses),
 			Status:            readyStatus(item),
 			Ready:             ready,
 			Schedulable:       schedulable,

@@ -150,51 +150,6 @@ func TestConnectionUnreachableWhenNodesForbidden(t *testing.T) {
 	}
 }
 
-func TestListNodesReturnsProjection(t *testing.T) {
-	node := corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{Name: "worker-1"},
-		Status: corev1.NodeStatus{
-			Addresses: []corev1.NodeAddress{
-				{Type: corev1.NodeHostName, Address: "worker-1"},
-				{Type: corev1.NodeInternalIP, Address: "10.0.0.12"},
-			},
-			NodeInfo: corev1.NodeSystemInfo{
-				OSImage:                 "Ubuntu 24.04.3 LTS",
-				KernelVersion:           "6.8.0-45-generic",
-				KubeletVersion:          "v1.30.14",
-				ContainerRuntimeVersion: "containerd://2.0.0",
-			},
-		},
-	}
-	router, _ := newClusterTestRouter(t, kubefake.NewSimpleClientset(&node), metricsfake.NewSimpleClientset())
-	cookie := loginCookie(t, router, "viewer")
-
-	rec := doGetWithCookie(router, "/api/v1/nodes", cookie)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	body := rec.Body.String()
-	if !strings.Contains(body, `"name":"worker-1"`) {
-		t.Fatalf("body=%s", body)
-	}
-	if !strings.Contains(body, `"internalAddress":{"address":"10.0.0.12","source":"NodeInternalIP","family":"ipv4"}`) {
-		t.Fatalf("body=%s", body)
-	}
-}
-
-func TestListNodesEmptyReturnsBrackets(t *testing.T) {
-	router, _ := newClusterTestRouter(t, kubefake.NewSimpleClientset(), metricsfake.NewSimpleClientset())
-	cookie := loginCookie(t, router, "viewer")
-
-	rec := doGetWithCookie(router, "/api/v1/nodes", cookie)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), `"data":[]`) {
-		t.Fatalf("body=%s", rec.Body.String())
-	}
-}
-
 func TestConnectionTestRequiresOperatorRole(t *testing.T) {
 	router, _ := newClusterTestRouter(t, kubefake.NewSimpleClientset(), metricsfake.NewSimpleClientset())
 

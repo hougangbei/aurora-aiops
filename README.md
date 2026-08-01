@@ -80,15 +80,18 @@ RBAC 资源可以按 ServiceAccount、Role、ClusterRole、Binding 维度查看�
 
 ## AIOps 智能运维（迁移中）
 
-基于多智能体协同的云原生智能运维能力正在从 `qd`（Node 参考实现）迁入 Go 后端，技术栈保持 `Go + Gin + client-go + SQLite`。当前已完成第一阶段的持久化与领域骨架：
+基于多智能体协同的云原生智能运维能力正在从 `qd`（Node 参考实现）迁入 Go 后端，技术栈保持 `Go + Gin + client-go + SQLite`。当前已完成：
 
-- SQLite 持久化（`internal/store`），存储 Incident 与迁移记录
+- SQLite 持久化（`internal/store`），存储 Incident、平台账号与 Session 摘要
 - Incident 严格状态机（`internal/aiops/state_machine.go`），非终态均可进入 `failed`，终态不可再迁移
 - `/api/v1/aiops/incidents` 创建与查询接口（`internal/server/aiops_routes.go`），统一 `{code, message, data}` 信封
-- 迁移矩阵与 API 文档：`docs/aiops/`
+- 平台账号密码登录 + HttpOnly Session Cookie（`internal/auth`），删除请求级 Kubernetes Token
+- 进程级共享 Kubernetes 客户端与连接探测（`internal/kube`、`internal/cluster`），`/api/v1/cluster/connection`、`/api/v1/nodes`
+- 前端登录改为用户名/密码，`withCredentials` 同源携带 Cookie（`web/src`）
 
-当前 `/api/v1` 的认证仍是迁移期临时入口（请求级 Kubernetes Token），后续将替换为平台账号 + HttpOnly Session Cookie 与共享 kubeconfig。详见：
+当前认证入口为平台账号 + Session；后端只创建一个共享客户端，节点 InternalIP 只来自 Node API，不 SSH 节点。详见：
 
+- [单集群接入与平台认证架构](docs/architecture/single-cluster-access.md)
 - [AIOps API v1 文档](docs/aiops/api-v1.md)
 - [qd → kubejojo API 迁移矩阵](docs/aiops/migration-matrix.md)
 - [第三方依赖与授权结论](docs/third-party-and-ownership.md)

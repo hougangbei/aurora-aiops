@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -49,7 +50,8 @@ func handleCreateIncident(svc *aiops.Service) gin.HandlerFunc {
 				c.JSON(http.StatusBadRequest, response.Failure("INVALID_INCIDENT_REQUEST", "事件请求参数无效"))
 				return
 			}
-			c.JSON(http.StatusInternalServerError, response.Failure("CREATE_INCIDENT_FAILED", err.Error()))
+			log.Printf("CREATE_INCIDENT_FAILED: %v", err)
+			c.JSON(http.StatusInternalServerError, response.Failure("CREATE_INCIDENT_FAILED", "创建事件失败"))
 			return
 		}
 
@@ -61,7 +63,8 @@ func handleListIncidents(svc *aiops.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		items, err := svc.List(c.Request.Context(), aiops.IncidentFilter{})
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, response.Failure("LIST_INCIDENTS_FAILED", err.Error()))
+			log.Printf("LIST_INCIDENTS_FAILED: %v", err)
+			c.JSON(http.StatusInternalServerError, response.Failure("LIST_INCIDENTS_FAILED", "查询事件列表失败"))
 			return
 		}
 
@@ -78,7 +81,8 @@ func handleGetIncident(svc *aiops.Service) gin.HandlerFunc {
 				c.JSON(http.StatusNotFound, response.Failure("INCIDENT_NOT_FOUND", "事件不存在"))
 				return
 			}
-			c.JSON(http.StatusInternalServerError, response.Failure("GET_INCIDENT_FAILED", err.Error()))
+			log.Printf("GET_INCIDENT_FAILED: %v", err)
+			c.JSON(http.StatusInternalServerError, response.Failure("GET_INCIDENT_FAILED", "获取事件失败"))
 			return
 		}
 

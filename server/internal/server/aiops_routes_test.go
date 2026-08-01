@@ -1,7 +1,7 @@
 package server
 
 import (
-	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -17,7 +17,9 @@ import (
 
 // newTestRouter builds a gin.Engine with only the aiops routes registered,
 // backed by a real SQLite database in a temporary directory.
-func newTestRouter(t *testing.T) (*gin.Engine, *storeClose) {
+// It returns the router and the underlying *sql.DB so callers can control
+// the database lifecycle (e.g. close it to simulate internal errors).
+func newTestRouter(t *testing.T) (*gin.Engine, *sql.DB) {
 	t.Helper()
 
 	gin.SetMode(gin.TestMode)
@@ -36,11 +38,7 @@ func newTestRouter(t *testing.T) (*gin.Engine, *storeClose) {
 	api := router.Group("/api/v1")
 	registerAIOpsRoutes(api, svc)
 
-	return router, &storeClose{db: db}
-}
-
-type storeClose struct {
-	db interface{ Close() error }
+	return router, db
 }
 
 // responseEnvelope captures the common JSON envelope returned by the API.
@@ -185,11 +183,7 @@ func TestListIncidentsRoute_Empty(t *testing.T) {
 
 func TestListIncidentsRoute_AfterCreate(t *testing.T) {
 	router, _ := newTestRouter(t)
-	ctx := context.Background()
 
-	// Use the service directly to seed data — this avoids depending on the POST
-	// route in a GET test, but we can also use the route. Use the route for
-	// integration coverage.
 	createBody := `{"summary":"Pod OOMKilled","severity":"warning","namespace":"monitoring","resourceKind":"Pod","resourceName":"prometheus-0"}`
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/aiops/incidents", strings.NewReader(createBody))
 	createReq.Header.Set("Content-Type", "application/json")
@@ -198,8 +192,6 @@ func TestListIncidentsRoute_AfterCreate(t *testing.T) {
 	if createW.Code != http.StatusCreated {
 		t.Fatalf("create: expected 201, got %d", createW.Code)
 	}
-
-	_ = ctx // used for clarity above
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/aiops/incidents", nil)
 	listW := httptest.NewRecorder()
@@ -285,6 +277,88 @@ func TestGetIncidentRoute_AfterCreate(t *testing.T) {
 	}
 	if getEnv.Code != "OK" {
 		t.Errorf("expected code OK, got %s", getEnv.Code)
+	}
+
+	// Verify the returned incident matches the creation input
+	var incident map[string]interface{}
+	if err := json.Unmarshal(getEnv.Data, &incident); err != nil {
+		t.Fatalf("unmarshal incident: %v", err)
+	}
+	if v, _ := incident["summary"].(string); v != "Node NotReady" {
+		t.Errorf("expected summary 'Node NotReady', got %q", v)
+	}
+	if v, _ := incident["severity"].(string); v != "critical" {
+		t.Errorf("expected severity 'critical', got %q", v)
+	}
+	if v, _ := incident["namespace"].(string); v != "default" {
+		t.Errorf("expected namespace 'default', got %q", v)
+	}
+	if v, _ := incident["resourceKind"].(string); v != "Node" {
+		t.Errorf("expected resourceKind 'Node', got %q", v)
+	}
+	if v, _ := incident["resourceName"].(string); v != "worker-1" {
+		t.Errorf("expected resourceName 'worker-1', got %q", v)
+	}
+	if v, _ := incident["status"].(string); v != "received" {
+		t.Errorf("expected status 'received', got %q", v)
+	}
+}
+
+func TestGetIncidentRoute_InternalError(t *testing.T) {
+	router, db := newTestRouter(t)
+
+	// Create an incident successfully first
+	createBody := `{"summary":"DiskFull","severity":"warning","namespace":"kube-system","resourceKind":"Pod","resourceName":"etcd-0"}`
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/aiops/incidents", strings.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createW := httptest.NewRecorder()
+	router.ServeHTTP(createW, createReq)
+	if createW.Code != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d", createW.Code)
+	}
+
+	var createEnv responseEnvelope
+	if err := json.Unmarshal(createW.Body.Bytes(), &createEnv); err != nil {
+		t.Fatalf("unmarshal create response: %v", err)
+	}
+	var created map[string]interface{}
+	if err := json.Unmarshal(createEnv.Data, &created); err != nil {
+		t.Fatalf("unmarshal created incident: %v", err)
+	}
+	incidentID, _ := created["id"].(string)
+	if incidentID == "" {
+		t.Fatal("expected non-empty id from create")
+	}
+
+	// Close the database to force a server-side error on the next GET
+	db.Close()
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/aiops/incidents/"+incidentID, nil)
+	getW := httptest.NewRecorder()
+	router.ServeHTTP(getW, getReq)
+
+	if getW.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d; body=%s", getW.Code, getW.Body.String())
+	}
+
+	var env responseEnvelope
+	if err := json.Unmarshal(getW.Body.Bytes(), &env); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if env.Code != "GET_INCIDENT_FAILED" {
+		t.Errorf("expected code GET_INCIDENT_FAILED, got %s", env.Code)
+	}
+
+	// The message must be a fixed generic string, not leaking internal details
+	if env.Message != "获取事件失败" {
+		t.Errorf("expected generic message '获取事件失败', got %q", env.Message)
+	}
+
+	// Ensure no internal keywords are leaked
+	for _, keyword := range []string{"sql", "closed", "database", "sqlite", "scan"} {
+		if strings.Contains(strings.ToLower(env.Message), keyword) {
+			t.Errorf("message leaks internal keyword %q: %q", keyword, env.Message)
+		}
 	}
 }
 

@@ -268,6 +268,7 @@ func newRouter(
 			}.ServeHTTP(c.Writer, c.Request)
 		})
 
+		// aiops 路由暂不挂认证（阶段 01）；计划 01A 将接入平台账号 Session 认证，届时迁入受保护组
 		registerAIOpsRoutes(api, aiopsService)
 
 		authorized := api.Group("/")

@@ -10,6 +10,7 @@ type Config struct {
 	HTTPAddr       string
 	KubeconfigPath string
 	Update         UpdateConfig
+	AIOps          AIOpsConfig
 }
 
 type UpdateConfig struct {
@@ -19,6 +20,10 @@ type UpdateConfig struct {
 	AllowedSubjects  []string
 	GitHubToken      string
 	TargetPath       string
+}
+
+type AIOpsConfig struct {
+	DBPath string
 }
 
 func Load() Config {
@@ -32,6 +37,9 @@ func Load() Config {
 			AllowedSubjects:  splitCSVEnv("KUBEJOJO_UPDATE_ALLOWED_SUBJECTS"),
 			GitHubToken:      getEnv("KUBEJOJO_UPDATE_GITHUB_TOKEN", ""),
 			TargetPath:       getEnv("KUBEJOJO_UPDATE_TARGET_PATH", ""),
+		},
+		AIOps: AIOpsConfig{
+			DBPath: getEnv("KUBEJOJO_AIOPS_DB", "./data/kubejojo.db"),
 		},
 	}
 }

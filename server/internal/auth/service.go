@@ -96,6 +96,13 @@ func (s *Service) Authenticate(ctx context.Context, rawSession string) (User, er
 	return user, nil
 }
 
+// SessionExpiry returns the expiry time for a session created at this moment.
+// It mirrors the TTL applied inside Login so handlers can report the same
+// expiry without a second database read.
+func (s *Service) SessionExpiry() time.Time {
+	return s.now().UTC().Add(s.sessionTTL)
+}
+
 // Logout removes the session identified by rawSession. Removing an already
 // unknown session is not an error.
 func (s *Service) Logout(ctx context.Context, rawSession string) error {

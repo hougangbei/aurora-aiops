@@ -77,7 +77,6 @@ func newRouter(
 	info buildinfo.Info,
 ) *gin.Engine {
 	_ = sharedClient
-	_ = probe
 
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
@@ -239,6 +238,7 @@ func newRouter(
 			// aiops 与业务路由全部迁入 Session 受保护组；仅 login 匿名。
 			registerSessionAuthRoutes(authorized, authService)
 			registerAIOpsRoutes(authorized, aiopsService)
+			registerClusterRoutes(authorized, probe, clusterService)
 
 			{
 				authorized.GET("/system/update-status", func(c *gin.Context) {

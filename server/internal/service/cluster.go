@@ -1077,6 +1077,21 @@ func (s *ClusterService) ListNamespaceItems(ctx context.Context) ([]NamespaceIte
 	return result, nil
 }
 
+// ListPlatformNodes returns the reduced cluster.Node projection of every node.
+// It never runs host commands or connects to node addresses.
+func (s *ClusterService) ListPlatformNodes(ctx context.Context) ([]cluster.Node, error) {
+	items, err := s.client.Kubernetes.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list nodes: %w", err)
+	}
+
+	nodes := make([]cluster.Node, 0, len(items.Items))
+	for _, item := range items.Items {
+		nodes = append(nodes, cluster.MapNode(item))
+	}
+	return nodes, nil
+}
+
 func (s *ClusterService) ListNodes(ctx context.Context) ([]NodeItem, error) {
 	items, err := s.client.Kubernetes.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {

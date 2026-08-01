@@ -103,5 +103,42 @@ ON evidence_edges(incident_id)`)
 		return err
 	}
 
+	_, err = db.Exec(`
+CREATE TABLE IF NOT EXISTS agent_runs (
+  id TEXT PRIMARY KEY,
+  incident_id TEXT NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+  role TEXT NOT NULL,
+  attempt INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL CHECK (status IN ('running','succeeded','failed','skipped')),
+  summary TEXT NOT NULL DEFAULT '',
+  output TEXT NOT NULL DEFAULT '',
+  model TEXT NOT NULL DEFAULT '',
+  prompt_tokens INTEGER NOT NULL DEFAULT 0,
+  completion_tokens INTEGER NOT NULL DEFAULT 0,
+  total_tokens INTEGER NOT NULL DEFAULT 0,
+  error TEXT NOT NULL DEFAULT '',
+  started_at TEXT NOT NULL,
+  completed_at TEXT NOT NULL DEFAULT ''
+)`)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`
+CREATE INDEX IF NOT EXISTS idx_agent_runs_incident
+ON agent_runs(incident_id, role, attempt)`)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`
+CREATE TABLE IF NOT EXISTS workflow_locks (
+  incident_id TEXT PRIMARY KEY,
+  acquired_at TEXT NOT NULL
+)`)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }

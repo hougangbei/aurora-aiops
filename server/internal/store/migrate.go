@@ -199,5 +199,31 @@ ON remediation_snapshots(incident_id, action)`)
 		return err
 	}
 
+	_, err = db.Exec(`
+CREATE TABLE IF NOT EXISTS experiment_runs (
+  id TEXT PRIMARY KEY,
+  group_name TEXT NOT NULL,
+  seed INTEGER NOT NULL,
+  scenario TEXT NOT NULL,
+  expected_root_cause TEXT NOT NULL,
+  top1_correct INTEGER NOT NULL DEFAULT 0,
+  top3_contains INTEGER NOT NULL DEFAULT 0,
+  mttd_seconds REAL NOT NULL DEFAULT 0,
+  evidence_completeness REAL NOT NULL DEFAULT 0,
+  high_risk_intercepted INTEGER NOT NULL DEFAULT 0,
+  tokens_used INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+)`)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`
+CREATE INDEX IF NOT EXISTS idx_experiment_runs_group
+ON experiment_runs(group_name)`)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }

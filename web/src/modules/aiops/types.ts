@@ -85,3 +85,18 @@ export type IncidentEvent = {
   data: string;
   createdAt: string;
 };
+
+export type ExperimentGroup = 'rules' | 'single_llm' | 'multi_agent';
+
+export type ExperimentMetrics = {
+  group: ExperimentGroup;
+  sampleCount: number;
+  top1Rate: number;
+  top3Rate: number;
+  avgMttdSeconds: number;
+  evidenceCompletenessRate: number;
+  highRiskInterceptionRate: number;
+  avgTokens: number;
+  confidenceInterval: number;
+  insufficientSamples: boolean;
+};

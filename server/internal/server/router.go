@@ -22,6 +22,7 @@ import (
 	"github.com/heihuzicity-tech/kubejojo/server/internal/auth"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/buildinfo"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/cluster"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/experiment"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/kube"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/ptyx"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/remediation"
@@ -78,6 +79,7 @@ func newRouter(
 	aiopsWorkflow *aiops.Workflow,
 	aiopsEvents *aiops.EventStore,
 	remediationService *remediation.Service,
+	experimentRepo experiment.RunRepository,
 	info buildinfo.Info,
 ) *gin.Engine {
 	_ = sharedClient
@@ -248,6 +250,7 @@ func newRouter(
 				remediation: remediationService,
 			})
 			registerClusterRoutes(authorized, probe, clusterService)
+			registerExperimentRoutes(authorized, experimentRepo)
 
 			{
 				authorized.GET("/system/update-status", func(c *gin.Context) {

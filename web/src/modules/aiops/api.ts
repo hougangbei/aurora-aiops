@@ -4,6 +4,7 @@ import type {
   CreateIncidentInput,
   EvidenceEdge,
   EvidenceNode,
+  ExperimentMetrics,
   Incident,
 } from './types';
 
@@ -65,4 +66,9 @@ export async function executeRemediation(id: string, dryRun = true): Promise<Inc
 export async function rollbackIncident(id: string): Promise<Incident> {
   const response = await http.post(`/aiops/incidents/${encodeURIComponent(id)}/rollback`);
   return unwrap(response);
+}
+
+export async function getExperimentMetrics(): Promise<ExperimentMetrics[]> {
+  const response = await http.get<{ code: string; data: { metrics: ExperimentMetrics[] } }>('/experiments/metrics');
+  return response.data.data.metrics;
 }

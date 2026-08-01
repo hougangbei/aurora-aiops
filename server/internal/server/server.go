@@ -15,6 +15,7 @@ import (
 	"github.com/heihuzicity-tech/kubejojo/server/internal/cluster"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/config"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/evidence"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/experiment"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/kube"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/llm"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/remediation"
@@ -120,6 +121,7 @@ func Run(info buildinfo.Info) error {
 		workflow,
 		events,
 		remediationService,
+		experiment.NewRunRepository(db),
 		info,
 	)
 	return router.Run(cfg.HTTPAddr)

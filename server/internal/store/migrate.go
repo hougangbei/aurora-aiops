@@ -59,5 +59,49 @@ ON sessions(user_id, expires_at)`)
 		return err
 	}
 
+	_, err = db.Exec(`
+CREATE TABLE IF NOT EXISTS evidence_nodes (
+  incident_id TEXT NOT NULL REFERENCES incidents(id) ON DELETE CASCADE,
+  id TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('snapshot','event','log','metric','agent','system')),
+  payload TEXT NOT NULL,
+  observed_at TEXT NOT NULL,
+  hash TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (incident_id, id)
+)`)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`
+CREATE INDEX IF NOT EXISTS idx_evidence_nodes_incident
+ON evidence_nodes(incident_id)`)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`
+CREATE TABLE IF NOT EXISTS evidence_edges (
+  incident_id TEXT NOT NULL,
+  from_id TEXT NOT NULL,
+  to_id TEXT NOT NULL,
+  relation TEXT NOT NULL CHECK (relation IN ('supports','contradicts')),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (incident_id, from_id, to_id),
+  FOREIGN KEY (incident_id, from_id) REFERENCES evidence_nodes(incident_id, id) ON DELETE CASCADE,
+  FOREIGN KEY (incident_id, to_id) REFERENCES evidence_nodes(incident_id, id) ON DELETE CASCADE
+)`)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`
+CREATE INDEX IF NOT EXISTS idx_evidence_edges_incident
+ON evidence_edges(incident_id)`)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }

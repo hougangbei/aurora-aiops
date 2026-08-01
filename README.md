@@ -78,18 +78,17 @@ RBAC 资源可以按 ServiceAccount、Role、ClusterRole、Binding 维度查看�
 - 工作负载 `scale`、`restart`、`suspend`
 - 基于 GitHub Releases 的在线更新、回滚和重启
 
-## AIOps 智能运维（迁移中）
+## AIOps 智能运维
 
-基于多智能体协同的云原生智能运维能力正在从 `qd`（Node 参考实现）迁入 Go 后端，技术栈保持 `Go + Gin + client-go + SQLite`。当前已完成：
+基于多智能体协同的云原生智能运维，已从 `qd`（Node 参考实现）完整迁入 Go 后端与 React 控制台，技术栈保持 `Go + Gin + client-go + SQLite`。能力闭环：
 
-- SQLite 持久化（`internal/store`），存储 Incident、平台账号与 Session 摘要
-- Incident 严格状态机（`internal/aiops/state_machine.go`），非终态均可进入 `failed`，终态不可再迁移
-- `/api/v1/aiops/incidents` 创建与查询接口（`internal/server/aiops_routes.go`），统一 `{code, message, data}` 信封
-- 平台账号密码登录 + HttpOnly Session Cookie（`internal/auth`），删除请求级 Kubernetes Token
-- 进程级共享 Kubernetes 客户端与连接探测（`internal/kube`、`internal/cluster`），`/api/v1/cluster/connection`、`/api/v1/nodes`
-- 前端登录改为用户名/密码，`withCredentials` 同源携带 Cookie（`web/src`）
+- **后端诊断工作流**：创建 Incident 自动触发 `triage → collector → root_cause → remediation → risk_review` 五阶段诊断，状态沿 `received → triaging → collecting → analyzing → proposing → awaiting_approval` 推进；每阶段记录 `AgentRun`（role/attempt/status/输出/token 用量），角色输出经结构化校验，非法输出只把 Incident 置 `failed` 且不执行任何动作；未配置模型时确定性 triage/collector 照常运行，根因及后续记为 `model_unavailable`。
+- **证据链**：Evidence DAG（无环约束 + SHA-256 稳定哈希）、有界 Context Bundle（单日志 4KiB / 总包 64KiB）、K8s Pod 证据采集（快照/事件/尾部日志/Metrics，脱敏）。
+- **接口**：`/api/v1/aiops/incidents` 创建与查询、`/evidence`、`/runs`、`/reanalyze`、SSE 事件流（`lastEventId` 断线重放 + 15s 心跳）。
+- **前端控制台**（`web/src/modules/aiops`、`web/src/pages`）：工作台指标、Incident 列表（状态/命名空间筛选写入 URL）、详情实时视图（SSE 增量刷新）、证据图（`@xyflow/react` + ELK）、修复审批（高风险只能拒绝 / 中低风险审批需 ≥8 字理由）、模型设置（API Key 永不回显）、审计。
+- 平台账号密码登录 + HttpOnly Session Cookie；删除请求级 Kubernetes Token；浏览器不保存 Kubernetes Token 或 Session 原文。
 
-当前认证入口为平台账号 + Session；后端只创建一个共享客户端，节点 InternalIP 只来自 Node API，不 SSH 节点。详见：
+详见：
 
 - [单集群接入与平台认证架构](docs/architecture/single-cluster-access.md)
 - [AIOps API v1 文档](docs/aiops/api-v1.md)

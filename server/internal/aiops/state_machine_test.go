@@ -18,6 +18,7 @@ func TestCanTransition(t *testing.T) {
 		{StatusApproved, StatusExecuting, true},
 		{StatusExecuting, StatusResolved, true},
 		{StatusProposing, StatusRejected, true},
+		{StatusAwaitingApproval, StatusRejected, true},
 
 		// All non-terminal states can transition to failed
 		{StatusReceived, StatusFailed, true},

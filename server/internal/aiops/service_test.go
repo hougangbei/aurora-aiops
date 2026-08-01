@@ -17,6 +17,10 @@ type fakeRepository struct {
 
 	incidents map[string]Incident
 
+	// getError, when non-nil, is returned by Get instead of looking up incidents.
+	// This allows tests to inject repository-level errors (e.g. DB connection lost).
+	getError error
+
 	createCalls       int
 	updateStatusCalls int
 	lastUpdateID      string
@@ -39,6 +43,9 @@ func (f *fakeRepository) Create(_ context.Context, inc Incident) error {
 func (f *fakeRepository) Get(_ context.Context, id string) (Incident, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.getError != nil {
+		return Incident{}, f.getError
+	}
 	inc, ok := f.incidents[id]
 	if !ok {
 		return Incident{}, ErrIncidentNotFound
@@ -136,6 +143,32 @@ func TestAdvanceNotFound(t *testing.T) {
 	err := svc.Advance(context.Background(), "inc-nonexistent", StatusTriaging)
 	if !errors.Is(err, ErrIncidentNotFound) {
 		t.Fatalf("Advance not found: got err=%v, want ErrIncidentNotFound", err)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.updateStatusCalls != 0 {
+		t.Errorf("UpdateStatus called %d times, want 0", fake.updateStatusCalls)
+	}
+}
+
+func TestAdvanceRepoGetError(t *testing.T) {
+	dbErr := errors.New("db connection lost")
+	fake := newFakeRepository()
+	fake.getError = dbErr
+
+	svc := NewService(fake)
+	err := svc.Advance(context.Background(), "inc-any", StatusTriaging)
+	if err == nil {
+		t.Fatal("Advance: got nil error, want non-nil")
+	}
+	if errors.Is(err, ErrIncidentNotFound) {
+		t.Fatalf("Advance: got ErrIncidentNotFound, want raw DB error")
+	}
+	if errors.Is(err, ErrInvalidStateTransition) {
+		t.Fatalf("Advance: got ErrInvalidStateTransition, want raw DB error")
+	}
+	if err.Error() != dbErr.Error() {
+		t.Fatalf("Advance: got err=%v, want err=%v", err, dbErr)
 	}
 	fake.mu.Lock()
 	defer fake.mu.Unlock()

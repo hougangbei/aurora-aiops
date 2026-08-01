@@ -9,7 +9,7 @@ var transitions = map[Status][]Status{
 	StatusCollecting:       {StatusAnalyzing, StatusFailed},
 	StatusAnalyzing:        {StatusProposing, StatusFailed},
 	StatusProposing:        {StatusAwaitingApproval, StatusRejected, StatusFailed},
-	StatusAwaitingApproval: {StatusApproved, StatusFailed},
+	StatusAwaitingApproval: {StatusApproved, StatusRejected, StatusFailed},
 	StatusApproved:         {StatusExecuting, StatusFailed},
 	StatusExecuting:        {StatusResolved, StatusFailed},
 	// Terminal states: resolved, rejected, and failed have no outgoing edges.

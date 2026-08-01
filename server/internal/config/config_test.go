@@ -35,6 +35,33 @@ func TestLoadClusterClientDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadLLMDefaults(t *testing.T) {
+	t.Setenv("KUBEJOJO_LLM_BASE_URL", "")
+	t.Setenv("KUBEJOJO_LLM_MODEL", "")
+	t.Setenv("KUBEJOJO_LLM_TIMEOUT", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLM.BaseURL != "" || cfg.LLM.Model != "" || cfg.LLM.APIKey != "" {
+		t.Fatalf("LLM defaults not empty: %+v", cfg.LLM)
+	}
+	if cfg.LLM.Timeout != 60*time.Second {
+		t.Fatalf("LLM timeout=%s want 60s", cfg.LLM.Timeout)
+	}
+}
+
+func TestLoadLLMInvalidTimeout(t *testing.T) {
+	t.Setenv("KUBEJOJO_LLM_TIMEOUT", "not-a-duration")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected error for invalid KUBEJOJO_LLM_TIMEOUT")
+	}
+	t.Setenv("KUBEJOJO_LLM_TIMEOUT", "-5s")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected error for negative KUBEJOJO_LLM_TIMEOUT")
+	}
+}
+
 func TestLoadClusterClientInvalidValues(t *testing.T) {
 	cases := []struct {
 		name string

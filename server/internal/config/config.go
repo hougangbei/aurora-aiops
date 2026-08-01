@@ -15,6 +15,7 @@ type Config struct {
 	Cluster        ClusterConfig
 	Update         UpdateConfig
 	AIOps          AIOpsConfig
+	LLM            LLMConfig
 }
 
 // ClusterConfig holds the connection parameters for the single shared
@@ -38,8 +39,23 @@ type AIOpsConfig struct {
 	DBPath string
 }
 
+// LLMConfig holds the OpenAI-compatible model endpoint. An empty BaseURL
+// disables model-backed roles; the deterministic triage/collector still run.
+type LLMConfig struct {
+	BaseURL string
+	APIKey  string
+	Model   string
+	Style   string
+	Timeout time.Duration
+}
+
 func Load() (Config, error) {
 	cluster, err := loadClusterConfig()
+	if err != nil {
+		return Config{}, err
+	}
+
+	llm, err := loadLLMConfig()
 	if err != nil {
 		return Config{}, err
 	}
@@ -59,6 +75,27 @@ func Load() (Config, error) {
 		AIOps: AIOpsConfig{
 			DBPath: getEnv("KUBEJOJO_AIOPS_DB", "./data/kubejojo.db"),
 		},
+		LLM: llm,
+	}, nil
+}
+
+// loadLLMConfig parses the model endpoint settings. Only the timeout is
+// validated: an empty base URL/model simply disables model-backed roles.
+func loadLLMConfig() (LLMConfig, error) {
+	timeout, err := time.ParseDuration(getEnv("KUBEJOJO_LLM_TIMEOUT", "60s"))
+	if err != nil {
+		return LLMConfig{}, fmt.Errorf("KUBEJOJO_LLM_TIMEOUT: %w", err)
+	}
+	if timeout <= 0 {
+		return LLMConfig{}, fmt.Errorf("KUBEJOJO_LLM_TIMEOUT must be positive: %s", timeout)
+	}
+
+	return LLMConfig{
+		BaseURL: getEnv("KUBEJOJO_LLM_BASE_URL", ""),
+		APIKey:  getEnv("KUBEJOJO_LLM_API_KEY", ""),
+		Model:   getEnv("KUBEJOJO_LLM_MODEL", ""),
+		Style:   getEnv("KUBEJOJO_LLM_API_STYLE", ""),
+		Timeout: timeout,
 	}, nil
 }
 

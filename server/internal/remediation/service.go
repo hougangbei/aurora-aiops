@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -27,6 +28,9 @@ var (
 	// ErrNoExecutableActions marks an incident whose remediation plan has no
 	// structured actions to execute.
 	ErrNoExecutableActions = errors.New("remediation plan has no executable structured actions")
+	// ErrActionNotAllowed marks an approval blocked by the deterministic policy
+	// recheck performed immediately before the status transition.
+	ErrActionNotAllowed = errors.New("remediation action not allowed")
 )
 
 // Service orchestrates approve / reject / execute / rollback of approved
@@ -64,13 +68,27 @@ func NewService(
 // Approve transitions an awaiting-approval incident to approved and audits the
 // decision.
 func (s *Service) Approve(ctx context.Context, incidentID, actor, reason string) error {
-	// Decide is the single compare-and-swap arbiter: concurrent approve/reject
-	// produce exactly one winner, and the loser observes ErrStateTransitionConflict
-	// before this point, so only the winner reaches the audit append below.
+	incident, err := s.aiops.Get(ctx, incidentID)
+	if err != nil {
+		return err
+	}
+	// Fresh policy recheck on the latest stored plan immediately before approval.
+	// Approval is fail-closed: policy is the only source of approvability, so a
+	// stored risk-review run can never green-light a plan policy now denies.
+	plan, err := s.latestRemediation(ctx, incidentID)
+	if err != nil {
+		return err
+	}
+	effective := aiops.BuildEffectiveRiskReview(aiops.RiskReviewOutput{}, plan, incident.Namespace)
+	if !effective.Approvable {
+		return fmt.Errorf("%w: %s", ErrActionNotAllowed, strings.Join(effective.Blockers, "; "))
+	}
+	// Decide is the single compare-and-swap arbiter for concurrent decisions;
+	// only the winner reaches the audit append below.
 	if err := s.aiops.Decide(ctx, incidentID, aiops.StatusApproved); err != nil {
 		return err
 	}
-	_, err := s.audit.Append(ctx, audit.Record{
+	_, err = s.audit.Append(ctx, audit.Record{
 		Actor: actor, Action: "approve-remediation", Target: incidentID, Result: "approved",
 		Payload: reason, Timestamp: s.now().UTC(),
 	})
@@ -118,26 +136,34 @@ func (s *Service) Execute(ctx context.Context, incidentID, actor string) error {
 	return s.aiops.Advance(ctx, incidentID, aiops.StatusResolved)
 }
 
-// actionsFromPlan reads the latest succeeded remediation run and converts its
-// structured actions into policy.Action objects.
-func (s *Service) actionsFromPlan(ctx context.Context, incidentID string) ([]policy.Action, error) {
+// latestRemediation decodes the highest-attempt succeeded remediation run. It is
+// the single loader used by both plan inspection and the approval-time policy
+// recheck, so they can never disagree about which plan is current.
+func (s *Service) latestRemediation(ctx context.Context, incidentID string) (aiops.RemediationOutput, error) {
 	runs, err := s.runs.ListRuns(ctx, incidentID)
 	if err != nil {
-		return nil, err
+		return aiops.RemediationOutput{}, err
 	}
-	var run *aiops.AgentRun
+	var latest *aiops.AgentRun
 	for i := range runs {
-		if runs[i].Role == "remediation" && runs[i].Status == aiops.RunStatusSucceeded {
-			if run == nil || runs[i].Attempt > run.Attempt {
-				copy := runs[i]
-				run = &copy
-			}
+		if runs[i].Role != "remediation" || runs[i].Status != aiops.RunStatusSucceeded {
+			continue
+		}
+		if latest == nil || runs[i].Attempt > latest.Attempt {
+			copy := runs[i]
+			latest = &copy
 		}
 	}
-	if run == nil {
-		return nil, ErrNoExecutableActions
+	if latest == nil {
+		return aiops.RemediationOutput{}, ErrNoExecutableActions
 	}
-	output, err := aiops.DecodeRemediation(run.Output)
+	return aiops.DecodeRemediation(latest.Output)
+}
+
+// actionsFromPlan reads the latest remediation plan and converts its structured
+// actions into policy.Action objects.
+func (s *Service) actionsFromPlan(ctx context.Context, incidentID string) ([]policy.Action, error) {
+	output, err := s.latestRemediation(ctx, incidentID)
 	if err != nil {
 		return nil, err
 	}

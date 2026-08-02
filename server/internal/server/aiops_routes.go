@@ -380,6 +380,8 @@ func respondRemediationError(c *gin.Context, err error) {
 		c.JSON(http.StatusBadRequest, response.Failure("NO_EXECUTABLE_ACTIONS", "修复方案无可执行的结构化动作"))
 	case errors.Is(err, remediation.ErrAlreadyExecuted):
 		c.JSON(http.StatusConflict, response.Failure("ALREADY_EXECUTED", "该动作已执行，请人工确认后再处理"))
+	case errors.Is(err, remediation.ErrActionNotAllowed):
+		c.JSON(http.StatusForbidden, response.Failure("ACTION_NOT_ALLOWED", "修复动作未通过确定性策略校验"))
 	case errors.Is(err, policy.ErrActionDenied):
 		c.JSON(http.StatusForbidden, response.Failure("ACTION_DENIED", "动作被策略拒绝"))
 	case errors.Is(err, remediation.ErrSnapshotNotFound):

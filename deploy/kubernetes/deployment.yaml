@@ -28,11 +28,19 @@ spec:
         env:
         - name: HTTP_ADDR
           value: ":8080"
-        # 共享 kubeconfig 挂载为只读，后端用它访问集群。
-        - name: KUBEJOJO_KUBECONFIG
-          value: /etc/kubejojo/kubeconfig
         - name: KUBEJOJO_AIOPS_DB
           value: /var/lib/kubejojo/kubejojo.db
+        # 平台身份通过 ServiceAccount（in-cluster）访问集群，不挂载 kubeconfig。
+        - name: KUBEJOJO_BOOTSTRAP_ADMIN_USER
+          valueFrom:
+            secretKeyRef:
+              name: kubejojo-secrets
+              key: bootstrap-admin-user
+        - name: KUBEJOJO_BOOTSTRAP_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: kubejojo-secrets
+              key: bootstrap-admin-password
         # LLM API Key 只通过 Secret 引用，样例文件不放真实值。
         - name: KUBEJOJO_LLM_BASE_URL
           value: ""
@@ -54,9 +62,6 @@ spec:
         volumeMounts:
         - name: data
           mountPath: /var/lib/kubejojo
-        - name: kubeconfig
-          mountPath: /etc/kubejojo
-          readOnly: true
         resources:
           requests:
             cpu: 50m
@@ -68,6 +73,3 @@ spec:
       - name: data
         persistentVolumeClaim:
           claimName: kubejojo-data
-      - name: kubeconfig
-        secret:
-          secretName: kubejojo-kubeconfig

@@ -1,4 +1,4 @@
-# 默认安装只读权限：只能查看集群资源，不能写。
+# 默认安装只读权限：集群范围内只读，不能写任何资源。
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -6,10 +6,9 @@ metadata:
   namespace: kubejojo
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
   name: kubejojo-readonly
-  namespace: kubejojo
 rules:
 - apiGroups: [""]
   resources: ["pods", "services", "endpoints", "configmaps", "secrets",
@@ -36,50 +35,14 @@ rules:
   verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
+kind: ClusterRoleBinding
 metadata:
   name: kubejojo-readonly
-  namespace: kubejojo
 roleRef:
   apiGroup: rbac.authorization.k8s.io
-  kind: Role
+  kind: ClusterRole
   name: kubejojo-readonly
 subjects:
 - kind: ServiceAccount
   name: kubejojo-readonly
-  namespace: kubejojo
----
-# 可执行权限样例：只有需要执行修复动作时才启用，默认不安装。
-# 将 deployment.yaml 的 serviceAccountName 改为 kubejojo-executor 并 apply 本段。
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: kubejojo-executor
-  namespace: kubejojo
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: kubejojo-executor
-  namespace: kubejojo
-rules:
-- apiGroups: ["apps"]
-  resources: ["deployments"]
-  verbs: ["get", "list", "watch", "patch", "update"]
-- apiGroups: ["batch"]
-  resources: ["cronjobs"]
-  verbs: ["get", "list", "watch", "patch", "update"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: kubejojo-executor
-  namespace: kubejojo
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: kubejojo-executor
-subjects:
-- kind: ServiceAccount
-  name: kubejojo-executor
   namespace: kubejojo

@@ -1,0 +1,46 @@
+# 可执行权限样例：只有需要执行修复动作时才启用，默认不安装。
+# 将 deployment.yaml 的 serviceAccountName 改为 kubejojo-executor 并 apply 本段。
+# 执行仅限 Deployment/CronJob 的 update/patch，Pod exec 仍然拒绝。
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubejojo-executor
+  namespace: kubejojo
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubejojo-executor-readonly
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubejojo-readonly
+subjects:
+- kind: ServiceAccount
+  name: kubejojo-executor
+  namespace: kubejojo
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubejojo-executor-write
+rules:
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+- apiGroups: ["batch"]
+  resources: ["cronjobs"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubejojo-executor-write
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubejojo-executor-write
+subjects:
+- kind: ServiceAccount
+  name: kubejojo-executor
+  namespace: kubejojo

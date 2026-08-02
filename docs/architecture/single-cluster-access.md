@@ -2,7 +2,7 @@
 
 > 基线日期：2026-08-01。对应计划 01A。
 
-本页描述 kubejojo 如何用平台账号密码登录，并通过一份后端共享 kubeconfig 稳定访问单个 Kubernetes 集群。平台身份与 Kubernetes 身份彻底分离。
+本页描述 kubejojo 如何用平台账号密码登录，并通过「显式 kubeconfig / in-cluster ServiceAccount 身份 / 默认 kubeconfig」的确定性顺序稳定访问单个 Kubernetes 集群。平台身份与 Kubernetes 身份彻底分离。
 
 ## 连接链路
 
@@ -17,7 +17,7 @@ Gin 鉴权 RequireSession（按 Cookie 里的 Session 摘要查 SQLite）
    ▼
 共享 ClusterService（进程启动时由 kube.NewSharedClient 创建一次，全请求复用）
    ▼
-Kubernetes API Server（client-go，使用共享 kubeconfig 中的身份）
+Kubernetes API Server（client-go，使用显式 kubeconfig 或 in-cluster ServiceAccount 身份）
    ▼
 Node API → Node InternalIP（来自 Node.Status.Addresses，非扫描结果）
 ```
@@ -25,7 +25,7 @@ Node API → Node InternalIP（来自 Node.Status.Addresses，非扫描结果）
 要点：
 
 - 用户在登录时只提交平台账号密码；**后端从不读取、也不接收用户的 Kubernetes Token**。
-- 进程启动时通过 `KUBEJOJO_KUBECONFIG` → `KUBECONFIG` → `~/.kube/config` 顺序选择一份 kubeconfig，构建唯一共享 client-go 客户端。请求级不再覆盖 Token。
+- 进程启动时按 `KUBEJOJO_KUBECONFIG` → `KUBECONFIG` → 集群内 ServiceAccount 身份 → `~/.kube/config` 的顺序选择集群身份，构建唯一共享 client-go 客户端。运行在 Pod 内时优先使用 in-cluster 身份，**不挂载 kubeconfig**。请求级不再覆盖 Token。
 - `kubejojo_session` Cookie 只存随机 Session 值的**摘要**，原始值仅经 HttpOnly Cookie 传输一次。
 - 节点发现只调用 Kubernetes Node API。`internalAddress` 取自 Node 状态的 `NodeInternalIP`（IPv4 优先），**后端不会连接该 IP**：不 ping、不端口扫描、不 SSH。
 - Metrics API 不可用只会把连接状态降级为 `degraded`，不会误判整个集群离线。
@@ -42,7 +42,8 @@ Node API → Node InternalIP（来自 Node.Status.Addresses，非扫描结果）
 | 变量 | 说明 |
 | --- | --- |
 | `KUBEJOJO_KUBECONFIG` | 显式指定共享 kubeconfig 路径（最高优先级） |
-| `KUBECONFIG` | 退而求其次，取第一个路径 |
+| `KUBECONFIG` | 未设 `KUBEJOJO_KUBECONFIG` 时取第一个路径 |
+| 集群内 ServiceAccount | 前两个变量都为空且在 Pod 内运行时使用（优先级高于 `~/.kube/config`） |
 | `KUBEJOJO_KUBE_TIMEOUT` | client-go 请求超时，默认 `10s`，非法值阻止启动 |
 | `KUBEJOJO_KUBE_QPS` | 客户端限速，默认 `20` |
 | `KUBEJOJO_KUBE_BURST` | 突发限速，默认 `40` |

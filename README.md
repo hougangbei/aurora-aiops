@@ -120,11 +120,12 @@ go run ./cmd/kubejojo
 
 - 后端：`http://127.0.0.1:8080`
 
-后端会按以下顺序读取集群配置：
+后端按以下顺序选择集群身份：
 
-1. `KUBEJOJO_KUBECONFIG`
-2. `KUBECONFIG`
-3. `~/.kube/config`
+1. `KUBEJOJO_KUBECONFIG`（显式 kubeconfig，最高优先级）
+2. `KUBECONFIG`（取第一个非空路径）
+3. 集群内 ServiceAccount 身份（运行在 Pod 内时自动启用，不挂载 kubeconfig）
+4. `~/.kube/config`（本地开发回退）
 
 ### 前端
 
@@ -168,7 +169,7 @@ kubectl create token kubejojo-dev -n kube-system
 
 release 构建会先跑 `npm test`、`go vet ./...`、`go test ./...`，任一失败立即退出；前端资源内嵌进单一 Go 二进制，无 Node 即可独立启动。
 
-容器/集群部署清单见 `deploy/kubernetes/`（只读 RBAC 默认安装，可执行 RBAC 为样例；容器只读 rootfs、非 root、DB 目录 volume 持久化，LLM API Key 走 Secret env）。Systemd 服务模板 `deploy/kubejojo.service` 已带 AIOps DB 与模型端点环境变量占位。
+容器/集群部署清单见 `deploy/kubernetes/`：默认只读 RBAC + in-cluster ServiceAccount 身份（**不挂载、不选择 kubeconfig**），可执行 RBAC 为可选样例；容器只读 rootfs、非 root、DB 目录 volume 持久化，bootstrap admin 与 LLM API Key 走 Secret env。安装步骤见 `deploy/kubernetes/README.md`。Systemd 服务模板 `deploy/kubejojo.service` 已带 AIOps DB 与模型端点环境变量占位。
 
 构建指定平台 release：
 

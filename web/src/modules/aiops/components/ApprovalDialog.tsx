@@ -3,15 +3,12 @@ import { Alert, App, Button, Empty, Form, Input, Modal, Space, Spin, Tag, Typogr
 import { useMemo, useState } from 'react';
 
 import { approveRemediation, getRuns, rejectRemediation } from '../api';
-import type { AgentRun } from '../types';
+import type { AgentRun, EffectiveRiskReview } from '../types';
 
 type RemediationAction = {
   command: string;
   reason: string;
-  risk: 'low' | 'medium' | 'high';
 };
-
-const riskColor: Record<RemediationAction['risk'], string> = { low: 'green', medium: 'orange', high: 'red' };
 
 function parseActions(output: string): RemediationAction[] {
   try {
@@ -22,9 +19,39 @@ function parseActions(output: string): RemediationAction[] {
   }
 }
 
-function latestRemediation(runs: AgentRun[]): AgentRun | undefined {
-  return runs.filter((run) => run.role === 'remediation').sort((a, b) => b.attempt - a.attempt)[0];
+// parseEffectiveReview decodes the risk_review run output into the authoritative
+// effective review. It returns undefined on missing output, invalid JSON, or
+// invalid field shapes so the dialog fails closed instead of trusting bad data.
+function parseEffectiveReview(output: string | undefined): EffectiveRiskReview | undefined {
+  if (!output) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(output) as Partial<EffectiveRiskReview>;
+    if (
+      typeof parsed.effectiveRisk !== 'string' ||
+      typeof parsed.approvable !== 'boolean' ||
+      !Array.isArray(parsed.actions)
+    ) {
+      return undefined;
+    }
+    return parsed as EffectiveRiskReview;
+  } catch {
+    return undefined;
+  }
 }
+
+function latestSucceededRun(runs: AgentRun[], role: string): AgentRun | undefined {
+  return runs
+    .filter((run) => run.role === role && run.status === 'succeeded')
+    .sort((a, b) => b.attempt - a.attempt)[0];
+}
+
+const effectiveRiskColor: Record<EffectiveRiskReview['effectiveRisk'], string> = {
+  low: 'green',
+  medium: 'orange',
+  high: 'red',
+};
 
 const MIN_REASON_LENGTH = 8;
 
@@ -54,12 +81,21 @@ export function ApprovalDialog({
     enabled: open && Boolean(incidentId),
   });
 
-  const actions = useMemo(() => {
-    const run = latestRemediation(runsQuery.data?.runs ?? []);
-    return run ? parseActions(run.output) : [];
-  }, [runsQuery.data]);
+  const runs = runsQuery.data?.runs ?? [];
 
-  const highRisk = actions.some((action) => action.risk === 'high');
+  // Remediation parsing is for command/reason display only; it never drives
+  // approval permission. The authoritative gate is the effective risk review.
+  const actions = useMemo(() => {
+    const run = latestSucceededRun(runs, 'remediation');
+    return run ? parseActions(run.output) : [];
+  }, [runs]);
+
+  const review = useMemo(() => {
+    const run = latestSucceededRun(runs, 'risk_review');
+    return run ? parseEffectiveReview(run.output) : undefined;
+  }, [runs]);
+
+  const canApprove = review?.approvable === true;
   const reasonReady = reason.trim().length >= MIN_REASON_LENGTH;
 
   const refresh = () => {
@@ -102,10 +138,7 @@ export function ApprovalDialog({
           <div className="space-y-2">
             {actions.map((action, index) => (
               <div key={index} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <Typography.Text strong>方案 {index + 1}</Typography.Text>
-                  <Tag color={riskColor[action.risk]}>风险 {action.risk}</Tag>
-                </div>
+                <Typography.Text strong>方案 {index + 1}</Typography.Text>
                 <Typography.Paragraph className="!mb-1 font-mono text-xs">{action.command}</Typography.Paragraph>
                 <Typography.Paragraph type="secondary" className="!mb-0 text-sm">
                   {action.reason}
@@ -114,9 +147,19 @@ export function ApprovalDialog({
             ))}
           </div>
 
-          {highRisk ? (
-            <Alert type="error" showIcon message="高风险方案不允许直接批准，只能拒绝。" />
-          ) : null}
+          {review ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Typography.Text type="secondary">有效风险</Typography.Text>
+                <Tag color={effectiveRiskColor[review.effectiveRisk]}>{review.effectiveRisk}</Tag>
+              </div>
+              {review.blockers && review.blockers.length > 0 ? (
+                <Alert type={canApprove ? 'info' : 'warning'} showIcon message={review.blockers.join('；')} />
+              ) : null}
+            </div>
+          ) : (
+            <Alert type="error" showIcon message="有效风险评审缺失，无法批准该方案。" />
+          )}
 
           <Form layout="vertical">
             <Form.Item
@@ -133,7 +176,7 @@ export function ApprovalDialog({
           </Form>
 
           <Space>
-            {!highRisk ? (
+            {canApprove ? (
               <Button
                 type="primary"
                 disabled={!reasonReady || busy}

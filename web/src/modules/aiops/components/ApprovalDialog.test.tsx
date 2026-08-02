@@ -16,28 +16,53 @@ vi.mock('../api', () => ({
   rejectRemediation: (...args: unknown[]) => rejectMock(...args),
 }));
 
-function remediationRun(actions: Array<{ command: string; reason: string; risk: string }>) {
-  // getRuns 在 api.ts 中已解包统一信封，返回 { runs: [...] }。
-  return {
-    runs: [
-      {
-        id: 'run-1',
-        incidentId: 'inc-1',
-        role: 'remediation',
-        attempt: 1,
-        status: 'succeeded',
-        summary: '',
-        output: JSON.stringify({ actions }),
-        model: '',
-        promptTokens: 0,
-        completionTokens: 0,
-        totalTokens: 0,
-        error: '',
-        startedAt: '',
-        completedAt: '',
-      },
-    ],
+type ReviewFixture = {
+  effectiveRisk: 'low' | 'medium' | 'high';
+  approvable: boolean;
+  blockers?: string[];
+  actions: Array<{
+    kind: string;
+    resourceKind: string;
+    resourceName: string;
+    allowed: boolean;
+    risk: 'low' | 'medium' | 'high';
+    reason: string;
+  }>;
+  modelReview: {
+    riskLevel: 'low' | 'medium' | 'high' | 'critical';
+    approved: boolean;
+    blockers?: string[];
+    rationale?: string;
   };
+};
+
+function run(id: string, role: string, output: unknown) {
+  return {
+    id,
+    incidentId: 'inc-1',
+    role,
+    attempt: 1,
+    status: 'succeeded',
+    summary: '',
+    output: JSON.stringify(output),
+    model: '',
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    error: '',
+    startedAt: '',
+    completedAt: '',
+  };
+}
+
+function remediationOnlyRun(risk: 'low' | 'medium' | 'high') {
+  return run('run-rem', 'remediation', {
+    actions: [{ command: `kubectl action (${risk})`, reason: 'restart after crash', risk }],
+  });
+}
+
+function reviewFixture(review: ReviewFixture, remediationRisk: 'low' | 'medium' | 'high' = 'medium') {
+  return { runs: [remediationOnlyRun(remediationRisk), run('run-risk', 'risk_review', review)] };
 }
 
 function reasonTextarea() {
@@ -56,20 +81,53 @@ describe('ApprovalDialog', () => {
     rejectMock.mockReset();
   });
 
-  it('hides the approve button for a high-risk plan and only allows rejection', async () => {
+  it('hides approve when the effective review is high/not approvable (even if remediation claims low)', async () => {
     getRunsMock.mockResolvedValue(
-      remediationRun([{ command: 'kubectl delete namespace prod', reason: 'dangerous', risk: 'high' }]),
+      reviewFixture(
+        {
+          effectiveRisk: 'high',
+          approvable: false,
+          blockers: ['policy: action namespace must match the incident namespace'],
+          actions: [
+            {
+              kind: 'restart_deployment',
+              resourceKind: 'Deployment',
+              resourceName: 'api-0',
+              allowed: false,
+              risk: 'high',
+              reason: 'namespace mismatch',
+            },
+          ],
+          modelReview: { riskLevel: 'low', approved: true },
+        },
+        'low',
+      ),
     );
     renderDialog();
-    await screen.findByText('高风险方案不允许直接批准，只能拒绝。');
+    await screen.findByRole('button', { name: /拒\s*绝/i });
     expect(screen.queryByRole('button', { name: /批准执行/i })).toBeNull();
-    // antd 对两个汉字按钮文本插入空格，用容忍空白的正则匹配。
-    expect(screen.getByRole('button', { name: /拒\s*绝/i })).toBeTruthy();
   });
 
-  it('requires at least 8 chars of reason for a medium-risk approval', async () => {
+  it('shows approve enabled after 8 chars when the effective review is approvable (even if remediation claims high)', async () => {
     getRunsMock.mockResolvedValue(
-      remediationRun([{ command: 'kubectl rollout restart deploy/api', reason: 'restart', risk: 'medium' }]),
+      reviewFixture(
+        {
+          effectiveRisk: 'medium',
+          approvable: true,
+          actions: [
+            {
+              kind: 'restart_deployment',
+              resourceKind: 'Deployment',
+              resourceName: 'api-0',
+              allowed: true,
+              risk: 'medium',
+              reason: 'restart deployment',
+            },
+          ],
+          modelReview: { riskLevel: 'high', approved: false },
+        },
+        'high',
+      ),
     );
     renderDialog();
     const approve = await screen.findByRole('button', { name: /批准执行/i });
@@ -83,9 +141,30 @@ describe('ApprovalDialog', () => {
     expect(screen.getByRole('button', { name: /批准执行/i })).toBeEnabled();
   });
 
+  it('fail-closes with an error and no approve button when no succeeded risk_review run exists', async () => {
+    getRunsMock.mockResolvedValue({ runs: [remediationOnlyRun('medium')] });
+    renderDialog();
+    await screen.findByText(/有效风险评审缺失/i);
+    expect(screen.queryByRole('button', { name: /批准执行/i })).toBeNull();
+  });
+
   it('disables repeated approval clicks while pending', async () => {
     getRunsMock.mockResolvedValue(
-      remediationRun([{ command: 'kubectl get pods', reason: 'safe', risk: 'low' }]),
+      reviewFixture({
+        effectiveRisk: 'low',
+        approvable: true,
+        actions: [
+          {
+            kind: 'suspend_cronjob',
+            resourceKind: 'CronJob',
+            resourceName: 'job-0',
+            allowed: true,
+            risk: 'low',
+            reason: 'suspend cronjob',
+          },
+        ],
+        modelReview: { riskLevel: 'low', approved: true },
+      }),
     );
     approveMock.mockReturnValue(new Promise(() => {}));
     renderDialog();

@@ -76,6 +76,33 @@ export type AgentRun = {
   completedAt: string;
 };
 
+// EffectiveRiskReview mirrors the Go aiops.EffectiveRiskReview JSON exactly. It
+// is the only source of approvability surfaced to the approval UI; the nested
+// model review is advisory context only.
+export type PolicyActionReview = {
+  kind: string;
+  resourceKind: string;
+  resourceName: string;
+  allowed: boolean;
+  risk: 'low' | 'medium' | 'high';
+  reason: string;
+};
+
+export type ModelRiskReview = {
+  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+  approved: boolean;
+  blockers?: string[];
+  rationale?: string;
+};
+
+export type EffectiveRiskReview = {
+  effectiveRisk: 'low' | 'medium' | 'high';
+  approvable: boolean;
+  blockers?: string[];
+  actions: PolicyActionReview[];
+  modelReview: ModelRiskReview;
+};
+
 export type IncidentEventType = 'run_started' | 'run_completed' | 'incident_updated' | 'reanalyze_started';
 
 export type IncidentEvent = {

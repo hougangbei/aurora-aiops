@@ -65,6 +65,18 @@ func RequireRoles(roles ...auth.Role) gin.HandlerFunc {
 	}
 }
 
+// RequireOperator admits operator and admin actors. Admin is always included
+// because the platform role set is hierarchical: an admin can do whatever an
+// operator can. It must run after RequireSession.
+func RequireOperator() gin.HandlerFunc {
+	return RequireRoles(auth.RoleOperator, auth.RoleAdmin)
+}
+
+// RequireAdmin admits admin actors only. It must run after RequireSession.
+func RequireAdmin() gin.HandlerFunc {
+	return RequireRoles(auth.RoleAdmin)
+}
+
 // ActorFromContext returns the authenticated platform user stored by
 // RequireSession.
 func ActorFromContext(c *gin.Context) (auth.User, bool) {

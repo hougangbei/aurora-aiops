@@ -79,6 +79,16 @@ func newAuthTestRouter(t *testing.T) *gin.Engine {
 			func(c *gin.Context) {
 				c.JSON(http.StatusOK, response.Success(gin.H{"ok": true}))
 			})
+		authorized.GET("/test/operator",
+			RequireOperator(),
+			func(c *gin.Context) {
+				c.JSON(http.StatusOK, response.Success(gin.H{"ok": true}))
+			})
+		authorized.GET("/test/admin",
+			RequireAdmin(),
+			func(c *gin.Context) {
+				c.JSON(http.StatusOK, response.Success(gin.H{"ok": true}))
+			})
 	}
 
 	return router
@@ -223,4 +233,34 @@ func readBody(resp *http.Response) string {
 	n, _ := resp.Body.Read(buf)
 	resp.Body.Close()
 	return string(buf[:n])
+}
+
+func TestRoleCombinators(t *testing.T) {
+	router := newAuthTestRouter(t)
+
+	cases := []struct {
+		name     string
+		username string
+		path     string
+		want     int
+	}{
+		{"viewer on operator route", "viewer", "/api/v1/test/operator", http.StatusForbidden},
+		{"operator on operator route", "operator", "/api/v1/test/operator", http.StatusOK},
+		{"admin on operator route", "admin", "/api/v1/test/operator", http.StatusOK},
+		{"viewer on admin route", "viewer", "/api/v1/test/admin", http.StatusForbidden},
+		{"operator on admin route", "operator", "/api/v1/test/admin", http.StatusForbidden},
+		{"admin on admin route", "admin", "/api/v1/test/admin", http.StatusOK},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			_, cookie := doLogin(t, router, tt.username, "correct-password")
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			req.AddCookie(cookie)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			if rec.Code != tt.want {
+				t.Fatalf("status=%d want=%d body=%s", rec.Code, tt.want, rec.Body.String())
+			}
+		})
+	}
 }

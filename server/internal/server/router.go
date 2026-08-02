@@ -102,6 +102,7 @@ func newRouter(
 
 		authorized := api.Group("/")
 		authorized.Use(RequireSession(authService, clusterService))
+		authorized.Use(EnforcePlatformRBAC())
 		{
 			authorized.GET("/system/build-info", func(c *gin.Context) {
 				c.JSON(http.StatusOK, response.Success(gin.H{
@@ -114,7 +115,7 @@ func newRouter(
 			})
 
 			authorized.GET("/pods/:namespace/:name/exec/ws",
-				RequireRoles(auth.RoleOperator, auth.RoleAdmin),
+				RequireAdmin(),
 				func(c *gin.Context) {
 					clusterService := mustClusterService(c)
 
@@ -264,7 +265,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(status))
 				})
 
-				authorized.POST("/system/update", func(c *gin.Context) {
+				authorized.POST("/system/update", RequireAdmin(), func(c *gin.Context) {
 					lock, err := acquireSystemLock(systemLockService, buildSystemOperationID("update"))
 					if err != nil {
 						respondWithClusterError(c, "SYSTEM_UPDATE_FAILED", err)
@@ -282,7 +283,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.POST("/system/rollback", func(c *gin.Context) {
+				authorized.POST("/system/rollback", RequireAdmin(), func(c *gin.Context) {
 					lock, err := acquireSystemLock(systemLockService, buildSystemOperationID("rollback"))
 					if err != nil {
 						respondWithClusterError(c, "SYSTEM_ROLLBACK_FAILED", err)
@@ -300,7 +301,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.POST("/system/restart", func(c *gin.Context) {
+				authorized.POST("/system/restart", RequireAdmin(), func(c *gin.Context) {
 					lock, err := acquireSystemLock(systemLockService, buildSystemOperationID("restart"))
 					if err != nil {
 						respondWithClusterError(c, "SYSTEM_RESTART_FAILED", err)
@@ -318,7 +319,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.POST("/manifests", func(c *gin.Context) {
+				authorized.POST("/manifests", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_CREATE_REQUEST", "请求体格式不正确"))
@@ -475,7 +476,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/pods/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/pods/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -510,7 +511,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.DELETE("/pods/:namespace/:name", func(c *gin.Context) {
+				authorized.DELETE("/pods/:namespace/:name", RequireAdmin(), func(c *gin.Context) {
 					result, err := mustClusterService(c).DeletePod(
 						c.Request.Context(),
 						c.Param("namespace"),
@@ -690,7 +691,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/deployments/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/deployments/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -711,7 +712,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.POST("/deployments/:namespace/:name/scale", func(c *gin.Context) {
+				authorized.POST("/deployments/:namespace/:name/scale", RequireAdmin(), func(c *gin.Context) {
 					var req scaleDeploymentRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_SCALE_REQUEST", "请求体格式不正确"))
@@ -736,7 +737,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.POST("/deployments/:namespace/:name/restart", func(c *gin.Context) {
+				authorized.POST("/deployments/:namespace/:name/restart", RequireAdmin(), func(c *gin.Context) {
 					result, err := mustClusterService(c).RestartDeployment(
 						c.Request.Context(),
 						c.Param("namespace"),
@@ -777,7 +778,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/statefulsets/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/statefulsets/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -798,7 +799,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.POST("/statefulsets/:namespace/:name/scale", func(c *gin.Context) {
+				authorized.POST("/statefulsets/:namespace/:name/scale", RequireAdmin(), func(c *gin.Context) {
 					var req scaleDeploymentRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_SCALE_REQUEST", "请求体格式不正确"))
@@ -823,7 +824,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.POST("/statefulsets/:namespace/:name/restart", func(c *gin.Context) {
+				authorized.POST("/statefulsets/:namespace/:name/restart", RequireAdmin(), func(c *gin.Context) {
 					result, err := mustClusterService(c).RestartStatefulSet(
 						c.Request.Context(),
 						c.Param("namespace"),
@@ -864,7 +865,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/jobs/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/jobs/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -885,7 +886,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.POST("/jobs/:namespace/:name/suspend", func(c *gin.Context) {
+				authorized.POST("/jobs/:namespace/:name/suspend", RequireAdmin(), func(c *gin.Context) {
 					var req suspendRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_SUSPEND_REQUEST", "请求体格式不正确"))
@@ -933,7 +934,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/cronjobs/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/cronjobs/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -954,7 +955,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.POST("/cronjobs/:namespace/:name/suspend", func(c *gin.Context) {
+				authorized.POST("/cronjobs/:namespace/:name/suspend", RequireAdmin(), func(c *gin.Context) {
 					var req suspendRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_SUSPEND_REQUEST", "请求体格式不正确"))
@@ -1002,7 +1003,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/replicasets/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/replicasets/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -1023,7 +1024,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.POST("/replicasets/:namespace/:name/scale", func(c *gin.Context) {
+				authorized.POST("/replicasets/:namespace/:name/scale", RequireAdmin(), func(c *gin.Context) {
 					var req scaleDeploymentRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_SCALE_REQUEST", "请求体格式不正确"))
@@ -1075,7 +1076,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/daemonsets/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/daemonsets/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -1096,7 +1097,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.POST("/daemonsets/:namespace/:name/restart", func(c *gin.Context) {
+				authorized.POST("/daemonsets/:namespace/:name/restart", RequireAdmin(), func(c *gin.Context) {
 					result, err := mustClusterService(c).RestartDaemonSet(
 						c.Request.Context(),
 						c.Param("namespace"),
@@ -1137,7 +1138,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/services/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/services/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -1185,7 +1186,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/endpoints/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/endpoints/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -1233,7 +1234,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/ingresses/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/ingresses/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -1277,7 +1278,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/ingressclasses/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/ingressclasses/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -1324,7 +1325,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/serviceaccounts/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/serviceaccounts/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -1372,7 +1373,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/roles/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/roles/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -1416,7 +1417,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/clusterroles/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/clusterroles/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -1463,7 +1464,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/rolebindings/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/rolebindings/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -1507,7 +1508,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/clusterrolebindings/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/clusterrolebindings/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -1554,7 +1555,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/configmaps/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/configmaps/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -1602,7 +1603,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/secrets/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/secrets/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -1650,7 +1651,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/networkpolicies/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/networkpolicies/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -1698,7 +1699,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/hpas/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/hpas/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -1756,7 +1757,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/vpas/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/vpas/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -1804,7 +1805,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/resourcequotas/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/resourcequotas/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -1852,7 +1853,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/limitranges/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/limitranges/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -1900,7 +1901,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/persistentvolumeclaims/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/persistentvolumeclaims/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -1944,7 +1945,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/persistentvolumes/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/persistentvolumes/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -1987,7 +1988,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(result))
 				})
 
-				authorized.PUT("/storageclasses/:name/yaml", func(c *gin.Context) {
+				authorized.PUT("/storageclasses/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					var req yamlUpdateRequest
 					if err := c.ShouldBindJSON(&req); err != nil {
 						c.JSON(http.StatusBadRequest, response.Failure("INVALID_YAML_UPDATE_REQUEST", "请求体格式不正确"))
@@ -2078,7 +2079,7 @@ func registerNamespacedDeleteRoute(
 	errorCode string,
 	handler namespacedDeleteHandler,
 ) {
-	group.DELETE(path, func(c *gin.Context) {
+	group.DELETE(path, RequireAdmin(), func(c *gin.Context) {
 		result, err := handler(
 			mustClusterService(c),
 			c.Request.Context(),
@@ -2100,7 +2101,7 @@ func registerClusterDeleteRoute(
 	errorCode string,
 	handler clusterDeleteHandler,
 ) {
-	group.DELETE(path, func(c *gin.Context) {
+	group.DELETE(path, RequireAdmin(), func(c *gin.Context) {
 		result, err := handler(
 			mustClusterService(c),
 			c.Request.Context(),

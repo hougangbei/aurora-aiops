@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -8,10 +9,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/heihuzicity-tech/kubejojo/server/internal/aiops"
+	"github.com/heihuzicity-tech/kubejojo/server/internal/auth"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/store"
 )
 
@@ -19,7 +22,7 @@ import (
 // backed by a real SQLite database in a temporary directory.
 // It returns the router and the underlying *sql.DB so callers can control
 // the database lifecycle (e.g. close it to simulate internal errors).
-func newTestRouter(t *testing.T) (*gin.Engine, *sql.DB) {
+func newTestRouter(t *testing.T) (*gin.Engine, *sql.DB, string) {
 	t.Helper()
 
 	gin.SetMode(gin.TestMode)
@@ -31,14 +34,27 @@ func newTestRouter(t *testing.T) (*gin.Engine, *sql.DB) {
 	}
 	t.Cleanup(func() { db.Close() })
 
+	authRepo := auth.NewRepository(db)
+	authService := auth.NewService(authRepo, sessionTTL, time.Now)
+	seedUser(t, authRepo, "t-admin", "admin", "correct-password", auth.RoleAdmin)
+	raw, _, err := authService.Login(context.Background(), "admin", "correct-password")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	adminCookie := sessionCookieName + "=" + raw
+
 	repo := aiops.NewRepository(db)
 	svc := aiops.NewService(repo)
 
 	router := gin.New()
 	api := router.Group("/api/v1")
-	registerAIOpsRoutes(api, aiopsRoutesDeps{svc: svc})
+	registerAuthRoutes(api, authService, sessionTTL)
+	authorized := api.Group("/")
+	authorized.Use(RequireSession(authService, nil))
+	authorized.Use(EnforcePlatformRBAC())
+	registerAIOpsRoutes(authorized, aiopsRoutesDeps{svc: svc})
 
-	return router, db
+	return router, db, adminCookie
 }
 
 // responseEnvelope captures the common JSON envelope returned by the API.
@@ -49,10 +65,11 @@ type responseEnvelope struct {
 }
 
 func TestCreateIncidentRoute(t *testing.T) {
-	router, _ := newTestRouter(t)
+	router, _, cookie := newTestRouter(t)
 
 	body := `{"summary":"Pod crash loop","severity":"critical","namespace":"default","resourceKind":"Pod","resourceName":"api-0"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/aiops/incidents", strings.NewReader(body))
+	req.Header.Set("Cookie", cookie)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -84,10 +101,11 @@ func TestCreateIncidentRoute(t *testing.T) {
 }
 
 func TestCreateIncidentRoute_EmptySummary(t *testing.T) {
-	router, _ := newTestRouter(t)
+	router, _, cookie := newTestRouter(t)
 
 	body := `{"summary":"","severity":"critical","namespace":"default","resourceKind":"Pod","resourceName":"api-0"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/aiops/incidents", strings.NewReader(body))
+	req.Header.Set("Cookie", cookie)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -107,10 +125,11 @@ func TestCreateIncidentRoute_EmptySummary(t *testing.T) {
 }
 
 func TestCreateIncidentRoute_InvalidSeverity(t *testing.T) {
-	router, _ := newTestRouter(t)
+	router, _, cookie := newTestRouter(t)
 
 	body := `{"summary":"Pod crash loop","severity":"severe","namespace":"default","resourceKind":"Pod","resourceName":"api-0"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/aiops/incidents", strings.NewReader(body))
+	req.Header.Set("Cookie", cookie)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -130,9 +149,10 @@ func TestCreateIncidentRoute_InvalidSeverity(t *testing.T) {
 }
 
 func TestCreateIncidentRoute_InvalidJSON(t *testing.T) {
-	router, _ := newTestRouter(t)
+	router, _, cookie := newTestRouter(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/aiops/incidents", strings.NewReader("{invalid"))
+	req.Header.Set("Cookie", cookie)
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
@@ -152,9 +172,10 @@ func TestCreateIncidentRoute_InvalidJSON(t *testing.T) {
 }
 
 func TestListIncidentsRoute_Empty(t *testing.T) {
-	router, _ := newTestRouter(t)
+	router, _, cookie := newTestRouter(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/aiops/incidents", nil)
+	req.Header.Set("Cookie", cookie)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
@@ -182,10 +203,11 @@ func TestListIncidentsRoute_Empty(t *testing.T) {
 }
 
 func TestListIncidentsRoute_AfterCreate(t *testing.T) {
-	router, _ := newTestRouter(t)
+	router, _, cookie := newTestRouter(t)
 
 	createBody := `{"summary":"Pod OOMKilled","severity":"warning","namespace":"monitoring","resourceKind":"Pod","resourceName":"prometheus-0"}`
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/aiops/incidents", strings.NewReader(createBody))
+	createReq.Header.Set("Cookie", cookie)
 	createReq.Header.Set("Content-Type", "application/json")
 	createW := httptest.NewRecorder()
 	router.ServeHTTP(createW, createReq)
@@ -194,6 +216,7 @@ func TestListIncidentsRoute_AfterCreate(t *testing.T) {
 	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/aiops/incidents", nil)
+	listReq.Header.Set("Cookie", cookie)
 	listW := httptest.NewRecorder()
 	router.ServeHTTP(listW, listReq)
 
@@ -216,9 +239,10 @@ func TestListIncidentsRoute_AfterCreate(t *testing.T) {
 }
 
 func TestGetIncidentRoute_NotFound(t *testing.T) {
-	router, _ := newTestRouter(t)
+	router, _, cookie := newTestRouter(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/aiops/incidents/inc-nonexistent", nil)
+	req.Header.Set("Cookie", cookie)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
@@ -237,11 +261,12 @@ func TestGetIncidentRoute_NotFound(t *testing.T) {
 }
 
 func TestGetIncidentRoute_AfterCreate(t *testing.T) {
-	router, _ := newTestRouter(t)
+	router, _, cookie := newTestRouter(t)
 
 	// Create an incident via the route
 	createBody := `{"summary":"Node NotReady","severity":"critical","namespace":"default","resourceKind":"Node","resourceName":"worker-1"}`
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/aiops/incidents", strings.NewReader(createBody))
+	createReq.Header.Set("Cookie", cookie)
 	createReq.Header.Set("Content-Type", "application/json")
 	createW := httptest.NewRecorder()
 	router.ServeHTTP(createW, createReq)
@@ -264,6 +289,7 @@ func TestGetIncidentRoute_AfterCreate(t *testing.T) {
 
 	// GET the incident by ID
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/aiops/incidents/"+incidentID, nil)
+	getReq.Header.Set("Cookie", cookie)
 	getW := httptest.NewRecorder()
 	router.ServeHTTP(getW, getReq)
 
@@ -305,35 +331,56 @@ func TestGetIncidentRoute_AfterCreate(t *testing.T) {
 }
 
 func TestGetIncidentRoute_InternalError(t *testing.T) {
-	router, db := newTestRouter(t)
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	ctx := context.Background()
 
-	// Create an incident successfully first
-	createBody := `{"summary":"DiskFull","severity":"warning","namespace":"kube-system","resourceKind":"Pod","resourceName":"etcd-0"}`
-	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/aiops/incidents", strings.NewReader(createBody))
-	createReq.Header.Set("Content-Type", "application/json")
-	createW := httptest.NewRecorder()
-	router.ServeHTTP(createW, createReq)
-	if createW.Code != http.StatusCreated {
-		t.Fatalf("create: expected 201, got %d", createW.Code)
+	// Auth gets its own database so that closing the aiops database below does
+	// not also break session authentication (the platform RBAC layer reads the
+	// session store on every request).
+	authDb, err := store.Open(filepath.Join(t.TempDir(), "auth.db"))
+	if err != nil {
+		t.Fatalf("open auth db: %v", err)
+	}
+	authRepo := auth.NewRepository(authDb)
+	authService := auth.NewService(authRepo, sessionTTL, time.Now)
+	seedUser(t, authRepo, "t-admin", "admin", "correct-password", auth.RoleAdmin)
+	raw, _, err := authService.Login(ctx, "admin", "correct-password")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	cookie := sessionCookieName + "=" + raw
+
+	aiopsDb, err := store.Open(filepath.Join(t.TempDir(), "aiops.db"))
+	if err != nil {
+		t.Fatalf("open aiops db: %v", err)
+	}
+	repo := aiops.NewRepository(aiopsDb)
+	svc := aiops.NewService(repo)
+	created, err := svc.Create(ctx, aiops.CreateIncidentInput{
+		Summary:      "DiskFull",
+		Severity:     "warning",
+		Namespace:    "kube-system",
+		ResourceKind: "Pod",
+		ResourceName: "etcd-0",
+	})
+	if err != nil {
+		t.Fatalf("create incident: %v", err)
 	}
 
-	var createEnv responseEnvelope
-	if err := json.Unmarshal(createW.Body.Bytes(), &createEnv); err != nil {
-		t.Fatalf("unmarshal create response: %v", err)
-	}
-	var created map[string]interface{}
-	if err := json.Unmarshal(createEnv.Data, &created); err != nil {
-		t.Fatalf("unmarshal created incident: %v", err)
-	}
-	incidentID, _ := created["id"].(string)
-	if incidentID == "" {
-		t.Fatal("expected non-empty id from create")
-	}
+	// Close the aiops database to force a server-side error on the next GET.
+	aiopsDb.Close()
 
-	// Close the database to force a server-side error on the next GET
-	db.Close()
+	router := gin.New()
+	api := router.Group("/api/v1")
+	registerAuthRoutes(api, authService, sessionTTL)
+	authorized := api.Group("/")
+	authorized.Use(RequireSession(authService, nil))
+	authorized.Use(EnforcePlatformRBAC())
+	registerAIOpsRoutes(authorized, aiopsRoutesDeps{svc: svc})
 
-	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/aiops/incidents/"+incidentID, nil)
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/aiops/incidents/"+created.ID, nil)
+	getReq.Header.Set("Cookie", cookie)
 	getW := httptest.NewRecorder()
 	router.ServeHTTP(getW, getReq)
 
@@ -354,7 +401,6 @@ func TestGetIncidentRoute_InternalError(t *testing.T) {
 		t.Errorf("expected generic message '获取事件失败', got %q", env.Message)
 	}
 
-	// Ensure no internal keywords are leaked
 	for _, keyword := range []string{"sql", "closed", "database", "sqlite", "scan"} {
 		if strings.Contains(strings.ToLower(env.Message), keyword) {
 			t.Errorf("message leaks internal keyword %q: %q", keyword, env.Message)

@@ -12,7 +12,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/heihuzicity-tech/kubejojo/server/internal/aiops"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/auth"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/policy"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/remediation"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/response"
@@ -46,14 +45,14 @@ const sseHeartbeat = 15 * time.Second
 func registerAIOpsRoutes(group *gin.RouterGroup, deps aiopsRoutesDeps) {
 	incidents := group.Group("/aiops/incidents")
 	{
-		incidents.POST("", handleCreateIncident(deps.svc, deps.workflow))
+		incidents.POST("", RequireOperator(), handleCreateIncident(deps.svc, deps.workflow))
 		incidents.GET("", handleListIncidents(deps.svc))
 		incidents.GET("/:id", handleGetIncident(deps.svc))
 		if deps.workflow != nil {
 			incidents.GET("/:id/evidence", handleGetIncidentEvidence(deps.svc, deps.workflow))
 			incidents.GET("/:id/runs", handleGetIncidentRuns(deps.svc, deps.workflow))
 			incidents.POST("/:id/reanalyze",
-				RequireRoles(auth.RoleOperator, auth.RoleAdmin),
+				RequireOperator(),
 				handleReanalyzeIncident(deps.svc, deps.workflow))
 		}
 		if deps.events != nil {
@@ -61,16 +60,16 @@ func registerAIOpsRoutes(group *gin.RouterGroup, deps aiopsRoutesDeps) {
 		}
 		if deps.remediation != nil {
 			incidents.POST("/:id/approve-remediation",
-				RequireRoles(auth.RoleOperator, auth.RoleAdmin),
+				RequireOperator(),
 				handleApproveRemediation(deps.svc, deps.remediation))
 			incidents.POST("/:id/reject-remediation",
-				RequireRoles(auth.RoleOperator, auth.RoleAdmin),
+				RequireOperator(),
 				handleRejectRemediation(deps.svc, deps.remediation))
 			incidents.POST("/:id/execute-remediation",
-				RequireRoles(auth.RoleAdmin),
+				RequireAdmin(),
 				handleExecuteRemediation(deps.svc, deps.remediation))
 			incidents.POST("/:id/rollback",
-				RequireRoles(auth.RoleAdmin),
+				RequireAdmin(),
 				handleRollbackRemediation(deps.svc, deps.remediation))
 		}
 	}

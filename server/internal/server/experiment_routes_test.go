@@ -35,6 +35,7 @@ func newExperimentTestRouter(t *testing.T) (*gin.Engine, *auth.Service) {
 	authRepo := auth.NewRepository(db)
 	authService := auth.NewService(authRepo, sessionTTL, time.Now)
 	seedUser(t, authRepo, "u-viewer", "viewer", "correct-password", auth.RoleViewer)
+	seedUser(t, authRepo, "u-admin", "admin", "correct-password", auth.RoleAdmin)
 
 	kubeClient := kubefake.NewSimpleClientset(&corev1.Node{})
 	clusterService := service.NewClusterService(&kube.Client{
@@ -53,7 +54,7 @@ func newExperimentTestRouter(t *testing.T) (*gin.Engine, *auth.Service) {
 
 func TestExperimentMetricsJSONAndCSV(t *testing.T) {
 	router, authService := newExperimentTestRouter(t)
-	cookie := routeSessionCookie(t, authService, "viewer", "correct-password")
+	cookie := routeSessionCookie(t, authService, "admin", "correct-password")
 
 	// 记录 2 条 multi_agent 运行。
 	for i, top1 := range []bool{true, false} {
@@ -113,7 +114,7 @@ func TestExperimentRunRejectsUnknownGroup(t *testing.T) {
 	body := `{"id":"run-x","group":"unknown","seed":1,"scenario":"x","expectedRootCause":"x"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/experiments/runs", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Cookie", routeSessionCookie(t, authService, "viewer", "correct-password"))
+	req.Header.Set("Cookie", routeSessionCookie(t, authService, "admin", "correct-password"))
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {

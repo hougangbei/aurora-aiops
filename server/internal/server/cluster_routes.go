@@ -8,7 +8,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heihuzicity-tech/kubejojo/server/internal/auth"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/cluster"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/response"
 	"github.com/heihuzicity-tech/kubejojo/server/internal/service"
@@ -69,7 +68,7 @@ func registerClusterRoutes(
 
 	group.GET("/cluster/connection", handleGetConnection(cache, probe))
 	group.POST("/cluster/connection/test",
-		RequireRoles(auth.RoleOperator, auth.RoleAdmin),
+		RequireOperator(),
 		handleTestConnection(cache, probe),
 	)
 }

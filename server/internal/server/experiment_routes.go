@@ -18,7 +18,7 @@ import (
 func registerExperimentRoutes(group *gin.RouterGroup, repo experiment.RunRepository) {
 	experiments := group.Group("/experiments")
 	{
-		experiments.POST("/runs", handleAddExperimentRun(repo))
+		experiments.POST("/runs", RequireAdmin(), handleAddExperimentRun(repo))
 		experiments.GET("/metrics", handleExperimentMetrics(repo))
 	}
 }

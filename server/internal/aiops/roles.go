@@ -73,6 +73,29 @@ type RiskReviewOutput struct {
 	Rationale string   `json:"rationale,omitempty"`
 }
 
+// PolicyActionReview is the deterministic per-action policy verdict surfaced by
+// the effective risk review. It is computed from policy.Evaluate, never from the
+// model's per-action risk field.
+type PolicyActionReview struct {
+	Kind         string `json:"kind"`
+	ResourceKind string `json:"resourceKind"`
+	ResourceName string `json:"resourceName"`
+	Allowed      bool   `json:"allowed"`
+	Risk         string `json:"risk"`
+	Reason       string `json:"reason"`
+}
+
+// EffectiveRiskReview is the only source of approvability. ModelReview is
+// retained nested for explanation but never changes EffectiveRisk or Approvable,
+// which are derived entirely from the deterministic policy evaluation.
+type EffectiveRiskReview struct {
+	EffectiveRisk string               `json:"effectiveRisk"`
+	Approvable    bool                 `json:"approvable"`
+	Blockers      []string             `json:"blockers,omitempty"`
+	Actions       []PolicyActionReview `json:"actions"`
+	ModelReview   RiskReviewOutput     `json:"modelReview"`
+}
+
 // decodeJSON strips markdown fences, then decodes text as T. Fence stripping
 // tolerates trailing backticks so models may wrap output in ```json blocks.
 func decodeJSON[T any](text string) (T, error) {

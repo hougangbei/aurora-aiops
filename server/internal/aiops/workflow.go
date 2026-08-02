@@ -443,13 +443,14 @@ func (w *Workflow) runRiskReview(ctx context.Context, run *AgentRun, inc Inciden
 	if err != nil {
 		return w.failRun(ctx, run, fmt.Errorf("llm risk review: %w", err))
 	}
-	out, err := DecodeRiskReview(resp.Text)
+	modelReview, err := DecodeRiskReview(resp.Text)
 	if err != nil {
 		return w.failRun(ctx, run, err)
 	}
+	effective := BuildEffectiveRiskReview(modelReview, remediation, inc.Namespace)
 	applyModelUsage(run, resp)
-	run.Summary = fmt.Sprintf("risk %s, approved=%t", out.RiskLevel, out.Approved)
-	run.Output = mustJSON(out)
+	run.Summary = fmt.Sprintf("effective risk %s, approvable=%t", effective.EffectiveRisk, effective.Approvable)
+	run.Output = mustJSON(effective)
 	return w.succeedRun(ctx, run, step)
 }
 

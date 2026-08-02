@@ -3,6 +3,7 @@ package aiops
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -359,5 +360,50 @@ func TestWorkflowCollectorHardFailureFailsIncident(t *testing.T) {
 	nodes, _ := evRepo.ListNodes(ctx, inc.ID)
 	if len(nodes) != 0 {
 		t.Fatalf("evidence persisted on hard failure: %d", len(nodes))
+	}
+}
+
+// TestWorkflowRiskReviewProducesEffectiveReview asserts the risk_review run
+// stores an EffectiveRiskReview whose approvability is derived from policy, not
+// the model. The fake remediation action is display-only (no structured Kind),
+// so policy denies it: effective risk is high and not approvable even though the
+// model said low/approved. The original model response is preserved in ModelReview.
+func TestWorkflowRiskReviewProducesEffectiveReview(t *testing.T) {
+	db, svc, incRepo, runRepo, evRepo := newWorkflowTest(t)
+	ctx := context.Background()
+	inc := createWorkflowIncident(t, svc)
+	wf := buildWorkflow(db, incRepo, runRepo, evRepo, newFakeCollector(), &fakeLLM{}, true)
+
+	if err := wf.Run(ctx, inc.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	runs, err := runRepo.ListRuns(ctx, inc.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var riskRun *AgentRun
+	for i := range runs {
+		if runs[i].Role == "risk_review" {
+			riskRun = &runs[i]
+		}
+	}
+	if riskRun == nil {
+		t.Fatal("no risk_review run")
+	}
+
+	var eff EffectiveRiskReview
+	if err := json.Unmarshal([]byte(riskRun.Output), &eff); err != nil {
+		t.Fatalf("decode effective review: %v", err)
+	}
+
+	if eff.EffectiveRisk != "high" {
+		t.Errorf("effectiveRisk=%q want high (policy over model)", eff.EffectiveRisk)
+	}
+	if eff.Approvable {
+		t.Error("approvable=true want false (display-only action denied by policy)")
+	}
+	if eff.ModelReview.RiskLevel != "low" || !eff.ModelReview.Approved {
+		t.Errorf("original model review not preserved: %+v", eff.ModelReview)
 	}
 }

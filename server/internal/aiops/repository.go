@@ -10,8 +10,9 @@ import (
 )
 
 var (
-	ErrIncidentNotFound      = errors.New("incident not found")
-	ErrIncidentAlreadyExists = errors.New("incident already exists")
+	ErrIncidentNotFound        = errors.New("incident not found")
+	ErrIncidentAlreadyExists   = errors.New("incident already exists")
+	ErrStateTransitionConflict = errors.New("incident state transition conflict")
 )
 
 // IncidentFilter holds optional filter criteria for listing incidents.
@@ -27,6 +28,7 @@ type IncidentRepository interface {
 	Get(ctx context.Context, id string) (Incident, error)
 	List(ctx context.Context, filter IncidentFilter) ([]Incident, error)
 	UpdateStatus(ctx context.Context, id string, status Status, updatedAt time.Time) error
+	TransitionStatus(ctx context.Context, id string, from, to Status, updatedAt time.Time) error
 }
 
 type sqlIncidentRepository struct {
@@ -137,6 +139,30 @@ func (r *sqlIncidentRepository) UpdateStatus(ctx context.Context, id string, sta
 		return ErrIncidentNotFound
 	}
 	return nil
+}
+
+func (r *sqlIncidentRepository) TransitionStatus(ctx context.Context, id string, from, to Status, updatedAt time.Time) error {
+	res, err := r.db.ExecContext(ctx, `
+		UPDATE incidents SET status = ?, updated_at = ? WHERE id = ? AND status = ?`,
+		string(to), updatedAt.UTC().Format(time.RFC3339Nano), id, string(from),
+	)
+	if err != nil {
+		return fmt.Errorf("transition incident status: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if n == 1 {
+		return nil
+	}
+	// No row matched: distinguish a missing incident from a status race.
+	if _, err := r.Get(ctx, id); errors.Is(err, ErrIncidentNotFound) {
+		return ErrIncidentNotFound
+	} else if err != nil {
+		return err
+	}
+	return ErrStateTransitionConflict
 }
 
 func (r *sqlIncidentRepository) scanIncident(row *sql.Row) (Incident, error) {

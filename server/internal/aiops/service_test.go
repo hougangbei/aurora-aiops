@@ -26,6 +26,10 @@ type fakeRepository struct {
 	lastUpdateID      string
 	lastUpdateStatus  Status
 	lastUpdateTime    time.Time
+
+	transitionStatusCalls int
+	lastTransitionFrom    Status
+	lastTransitionTo      Status
 }
 
 func newFakeRepository() *fakeRepository {
@@ -86,6 +90,25 @@ func (f *fakeRepository) UpdateStatus(_ context.Context, id string, status Statu
 	return nil
 }
 
+func (f *fakeRepository) TransitionStatus(_ context.Context, id string, from, to Status, updatedAt time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	inc, ok := f.incidents[id]
+	if !ok {
+		return ErrIncidentNotFound
+	}
+	if inc.Status != from {
+		return ErrStateTransitionConflict
+	}
+	inc.Status = to
+	inc.UpdatedAt = updatedAt
+	f.incidents[id] = inc
+	f.transitionStatusCalls++
+	f.lastTransitionFrom = from
+	f.lastTransitionTo = to
+	return nil
+}
+
 func TestAdvanceValidTransition(t *testing.T) {
 	fake := newFakeRepository()
 	inc := Incident{
@@ -103,14 +126,11 @@ func TestAdvanceValidTransition(t *testing.T) {
 	}
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
-	if fake.updateStatusCalls != 1 {
-		t.Errorf("UpdateStatus called %d times, want 1", fake.updateStatusCalls)
+	if fake.transitionStatusCalls != 1 {
+		t.Errorf("TransitionStatus called %d times, want 1", fake.transitionStatusCalls)
 	}
-	if fake.lastUpdateID != inc.ID {
-		t.Errorf("lastUpdateID = %q, want %q", fake.lastUpdateID, inc.ID)
-	}
-	if fake.lastUpdateStatus != StatusTriaging {
-		t.Errorf("lastUpdateStatus = %q, want %q", fake.lastUpdateStatus, StatusTriaging)
+	if fake.lastTransitionTo != StatusTriaging {
+		t.Errorf("lastTransitionTo = %q, want %q", fake.lastTransitionTo, StatusTriaging)
 	}
 }
 
@@ -131,8 +151,8 @@ func TestAdvanceInvalidTransition(t *testing.T) {
 	}
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
-	if fake.updateStatusCalls != 0 {
-		t.Errorf("UpdateStatus called %d times, want 0", fake.updateStatusCalls)
+	if fake.transitionStatusCalls != 0 {
+		t.Errorf("TransitionStatus called %d times, want 0", fake.transitionStatusCalls)
 	}
 }
 
@@ -146,8 +166,8 @@ func TestAdvanceNotFound(t *testing.T) {
 	}
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
-	if fake.updateStatusCalls != 0 {
-		t.Errorf("UpdateStatus called %d times, want 0", fake.updateStatusCalls)
+	if fake.transitionStatusCalls != 0 {
+		t.Errorf("TransitionStatus called %d times, want 0", fake.transitionStatusCalls)
 	}
 }
 
@@ -172,8 +192,8 @@ func TestAdvanceRepoGetError(t *testing.T) {
 	}
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
-	if fake.updateStatusCalls != 0 {
-		t.Errorf("UpdateStatus called %d times, want 0", fake.updateStatusCalls)
+	if fake.transitionStatusCalls != 0 {
+		t.Errorf("TransitionStatus called %d times, want 0", fake.transitionStatusCalls)
 	}
 }
 
@@ -257,5 +277,62 @@ func TestCreateInvalidInput(t *testing.T) {
 				t.Errorf("Create called %d times, want 0", fake.createCalls)
 			}
 		})
+	}
+}
+
+func TestDecideConcurrentDecisionHasOneWinner(t *testing.T) {
+	fake := newFakeRepository()
+	now := time.Now().UTC()
+	inc := Incident{
+		ID: "inc-concurrent", Summary: "race", Severity: SeverityCritical,
+		Status: StatusAwaitingApproval, Namespace: "default",
+		ResourceKind: "Pod", ResourceName: "api-0",
+		CreatedAt: now, UpdatedAt: now,
+	}
+	fake.incidents[inc.ID] = inc
+	svc := NewService(fake)
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	var approveErr, rejectErr error
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		<-start
+		approveErr = svc.Decide(context.Background(), inc.ID, StatusApproved)
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		rejectErr = svc.Decide(context.Background(), inc.ID, StatusRejected)
+	}()
+	close(start)
+	wg.Wait()
+
+	nilCount, conflictCount := 0, 0
+	for _, err := range []error{approveErr, rejectErr} {
+		if err == nil {
+			nilCount++
+		}
+		if errors.Is(err, ErrStateTransitionConflict) {
+			conflictCount++
+		}
+	}
+	if nilCount != 1 {
+		t.Fatalf("nilCount=%d want 1 (approve=%v reject=%v)", nilCount, approveErr, rejectErr)
+	}
+	if conflictCount != 1 {
+		t.Fatalf("conflictCount=%d want 1 (approve=%v reject=%v)", conflictCount, approveErr, rejectErr)
+	}
+
+	got, err := fake.Get(context.Background(), inc.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Status != StatusApproved && got.Status != StatusRejected {
+		t.Fatalf("stored status=%s want approved or rejected", got.Status)
+	}
+	if fake.transitionStatusCalls != 1 {
+		t.Fatalf("transitionStatusCalls=%d want exactly 1", fake.transitionStatusCalls)
 	}
 }

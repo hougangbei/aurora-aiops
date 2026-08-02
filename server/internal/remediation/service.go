@@ -64,17 +64,13 @@ func NewService(
 // Approve transitions an awaiting-approval incident to approved and audits the
 // decision.
 func (s *Service) Approve(ctx context.Context, incidentID, actor, reason string) error {
-	incident, err := s.aiops.Get(ctx, incidentID)
-	if err != nil {
+	// Decide is the single compare-and-swap arbiter: concurrent approve/reject
+	// produce exactly one winner, and the loser observes ErrStateTransitionConflict
+	// before this point, so only the winner reaches the audit append below.
+	if err := s.aiops.Decide(ctx, incidentID, aiops.StatusApproved); err != nil {
 		return err
 	}
-	if incident.Status != aiops.StatusAwaitingApproval {
-		return ErrInvalidStatus
-	}
-	if err := s.aiops.Advance(ctx, incidentID, aiops.StatusApproved); err != nil {
-		return err
-	}
-	_, err = s.audit.Append(ctx, audit.Record{
+	_, err := s.audit.Append(ctx, audit.Record{
 		Actor: actor, Action: "approve-remediation", Target: incidentID, Result: "approved",
 		Payload: reason, Timestamp: s.now().UTC(),
 	})
@@ -83,17 +79,10 @@ func (s *Service) Approve(ctx context.Context, incidentID, actor, reason string)
 
 // Reject transitions an awaiting-approval incident to rejected and audits it.
 func (s *Service) Reject(ctx context.Context, incidentID, actor, reason string) error {
-	incident, err := s.aiops.Get(ctx, incidentID)
-	if err != nil {
+	if err := s.aiops.Decide(ctx, incidentID, aiops.StatusRejected); err != nil {
 		return err
 	}
-	if incident.Status != aiops.StatusAwaitingApproval {
-		return ErrInvalidStatus
-	}
-	if err := s.aiops.Advance(ctx, incidentID, aiops.StatusRejected); err != nil {
-		return err
-	}
-	_, err = s.audit.Append(ctx, audit.Record{
+	_, err := s.audit.Append(ctx, audit.Record{
 		Actor: actor, Action: "reject-remediation", Target: incidentID, Result: "rejected",
 		Payload: reason, Timestamp: s.now().UTC(),
 	})

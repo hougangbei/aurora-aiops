@@ -191,6 +191,34 @@ func TestIncidentRepositoryUpdateStatusNotFound(t *testing.T) {
 	}
 }
 
+func TestRepositoryTransitionStatusCompareAndSwap(t *testing.T) {
+	repo := newTestRepository(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	inc := Incident{
+		ID: "inc-cas", Summary: "cas", Severity: SeverityCritical,
+		Status: StatusAwaitingApproval, Namespace: "default",
+		ResourceKind: "Pod", ResourceName: "api-0",
+		CreatedAt: now, UpdatedAt: now,
+	}
+	if err := repo.Create(ctx, inc); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := repo.TransitionStatus(ctx, "inc-cas", StatusAwaitingApproval, StatusApproved, now); err != nil {
+		t.Fatalf("first transition: %v", err)
+	}
+	// Status is now approved: a second transition claiming awaiting_approval must conflict.
+	if err := repo.TransitionStatus(ctx, "inc-cas", StatusAwaitingApproval, StatusRejected, now); !errors.Is(err, ErrStateTransitionConflict) {
+		t.Fatalf("err=%v want ErrStateTransitionConflict", err)
+	}
+	// Missing incident: not-found, not conflict.
+	if err := repo.TransitionStatus(ctx, "missing", StatusAwaitingApproval, StatusRejected, now); !errors.Is(err, ErrIncidentNotFound) {
+		t.Fatalf("err=%v want ErrIncidentNotFound", err)
+	}
+}
+
 func TestIncidentRepositoryCreateDuplicateID(t *testing.T) {
 	repo := newTestRepository(t)
 	ctx := context.Background()

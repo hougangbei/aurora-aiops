@@ -384,6 +384,8 @@ func respondRemediationError(c *gin.Context, err error) {
 		c.JSON(http.StatusForbidden, response.Failure("ACTION_DENIED", "动作被策略拒绝"))
 	case errors.Is(err, remediation.ErrSnapshotNotFound):
 		c.JSON(http.StatusNotFound, response.Failure("SNAPSHOT_NOT_FOUND", "快照不存在"))
+	case errors.Is(err, aiops.ErrStateTransitionConflict):
+		c.JSON(http.StatusConflict, response.Failure("STATE_TRANSITION_CONFLICT", "事件状态已被其他操作更新"))
 	default:
 		log.Printf("REMEDIATION_FAILED: %v", err)
 		c.JSON(http.StatusInternalServerError, response.Failure("REMEDIATION_FAILED", "执行失败"))

@@ -69,8 +69,9 @@ func (s *Service) Create(ctx context.Context, input CreateIncidentInput) (Incide
 }
 
 // Advance moves an incident to a new status if the transition is allowed.
-// It returns ErrInvalidStateTransition if the move is not permitted,
-// and never calls repo.UpdateStatus in that case.
+// The validation read preserves ErrInvalidStateTransition; a compare-and-swap
+// at the repository boundary then closes the race and may return
+// ErrStateTransitionConflict if a concurrent decision won.
 func (s *Service) Advance(ctx context.Context, id string, to Status) error {
 	incident, err := s.repo.Get(ctx, id)
 	if err != nil {
@@ -79,7 +80,19 @@ func (s *Service) Advance(ctx context.Context, id string, to Status) error {
 	if !CanTransition(incident.Status, to) {
 		return ErrInvalidStateTransition
 	}
-	return s.repo.UpdateStatus(ctx, id, to, time.Now().UTC())
+	return s.repo.TransitionStatus(ctx, id, incident.Status, to, time.Now().UTC())
+}
+
+// Decide resolves an awaiting-approval incident to a terminal approved or
+// rejected state through a single compare-and-swap. The expected "from" state
+// is fixed (awaiting_approval), so concurrent decisions are arbitrated entirely
+// by the CAS: exactly one caller wins and every loser observes
+// ErrStateTransitionConflict instead of a stale read of the winner's new state.
+func (s *Service) Decide(ctx context.Context, id string, to Status) error {
+	if to != StatusApproved && to != StatusRejected {
+		return ErrInvalidStateTransition
+	}
+	return s.repo.TransitionStatus(ctx, id, StatusAwaitingApproval, to, time.Now().UTC())
 }
 
 // Get retrieves an incident by ID.

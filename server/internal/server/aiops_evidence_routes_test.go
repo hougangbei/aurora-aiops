@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -511,5 +512,54 @@ func TestApproveExecuteRemediationFlow(t *testing.T) {
 	router.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("second execute status=%d want 400", w.Code)
+	}
+}
+
+func TestConcurrentApproveRejectRouteConflict(t *testing.T) {
+	router, _, _, _, authService, _ := newAIOpsRouteRouter(t)
+	id, _ := createIncidentViaRoute(t, router, authService, "admin") // status now awaiting_approval
+	cookie := routeSessionCookie(t, authService, "operator", "correct-password")
+	body := `{"reason":"concurrent decision"}`
+
+	do := func(suffix string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/aiops/incidents/"+id+"/"+suffix, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Cookie", cookie)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	var appRec, rejRec *httptest.ResponseRecorder
+	wg.Add(2)
+	go func() { defer wg.Done(); <-start; appRec = do("approve-remediation") }()
+	go func() { defer wg.Done(); <-start; rejRec = do("reject-remediation") }()
+	close(start)
+	wg.Wait()
+
+	okCount, conflictCount := 0, 0
+	for _, c := range []int{appRec.Code, rejRec.Code} {
+		if c == http.StatusOK {
+			okCount++
+		}
+		if c == http.StatusConflict {
+			conflictCount++
+		}
+	}
+	if okCount != 1 {
+		t.Fatalf("okCount=%d want 1 (approve=%d reject=%d)", okCount, appRec.Code, rejRec.Code)
+	}
+	if conflictCount != 1 {
+		t.Fatalf("conflictCount=%d want 1 (approve=%d reject=%d)", conflictCount, appRec.Code, rejRec.Code)
+	}
+
+	conflictBody := rejRec.Body.String()
+	if appRec.Code == http.StatusConflict {
+		conflictBody = appRec.Body.String()
+	}
+	if !strings.Contains(conflictBody, `"code":"STATE_TRANSITION_CONFLICT"`) {
+		t.Fatalf("conflict body missing STATE_TRANSITION_CONFLICT: %s", conflictBody)
 	}
 }

@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -133,6 +132,10 @@ func loadClusterConfig() (ClusterConfig, error) {
 	}, nil
 }
 
+// kubeconfigPath resolves only the explicit and KUBECONFIG-first-entry paths.
+// An empty result defers identity selection to kube.NewSharedClient so the
+// in-cluster service account identity can be preferred over a default
+// kubeconfig when running inside the cluster.
 func kubeconfigPath() string {
 	if value := strings.TrimSpace(os.Getenv("KUBEJOJO_KUBECONFIG")); value != "" {
 		return value
@@ -145,12 +148,7 @@ func kubeconfigPath() string {
 		}
 	}
 
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-
-	return filepath.Join(homeDir, ".kube", "config")
+	return ""
 }
 
 func getEnv(key string, fallback string) string {

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"testing"
 	"time"
 )
@@ -59,6 +60,29 @@ func TestLoadLLMInvalidTimeout(t *testing.T) {
 	t.Setenv("KUBEJOJO_LLM_TIMEOUT", "-5s")
 	if _, err := Load(); err == nil {
 		t.Fatal("expected error for negative KUBEJOJO_LLM_TIMEOUT")
+	}
+}
+
+// TestKubeconfigPathPrecedence asserts that the config layer only resolves the
+// explicit and KUBECONFIG-first-entry variables. The empty case defers identity
+// selection to kube.NewSharedClient (explicit/in-cluster/default).
+func TestKubeconfigPathPrecedence(t *testing.T) {
+	t.Setenv("KUBEJOJO_KUBECONFIG", "/explicit")
+	t.Setenv("KUBECONFIG", "/secondary")
+	if got := kubeconfigPath(); got != "/explicit" {
+		t.Fatalf("kubeconfigPath=%q want /explicit", got)
+	}
+
+	t.Setenv("KUBEJOJO_KUBECONFIG", "")
+	t.Setenv("KUBECONFIG", "/first"+string(os.PathListSeparator)+"/second")
+	if got := kubeconfigPath(); got != "/first" {
+		t.Fatalf("kubeconfigPath=%q want /first", got)
+	}
+
+	t.Setenv("KUBEJOJO_KUBECONFIG", "")
+	t.Setenv("KUBECONFIG", "")
+	if got := kubeconfigPath(); got != "" {
+		t.Fatalf("kubeconfigPath=%q want empty (selection deferred to kube client)", got)
 	}
 }
 

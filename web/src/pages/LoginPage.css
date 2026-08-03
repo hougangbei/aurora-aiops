@@ -168,6 +168,15 @@
   text-transform: uppercase;
 }
 
+.login-field-shell .ant-form-item-label > label {
+  color: rgba(226, 235, 255, 0.72);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
 .login-field-hint {
   color: rgba(226, 235, 255, 0.42);
   font-size: 11px;

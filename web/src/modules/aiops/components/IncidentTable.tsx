@@ -4,6 +4,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { Link, useSearchParams } from 'react-router-dom';
 
 import { useAppStore } from '../../../stores/appStore';
+import { CoreSpinLoader } from '../../../components/ui/core-spin-loader';
 import { listIncidents } from '../api';
 import { demoIncidents } from '../demo';
 import { formatTime } from '../format';
@@ -133,14 +134,18 @@ export function IncidentTable() {
         <Alert type="error" showIcon message="加载诊断任务失败" description={String(incidentsQuery.error)} />
       ) : null}
 
-      <Table<Incident>
-        rowKey="id"
-        columns={columns}
-        dataSource={incidents}
-        loading={dataMode === 'live' && incidentsQuery.isLoading}
-        pagination={{ pageSize: 20, showSizeChanger: false }}
-        locale={{ emptyText: '暂无诊断任务' }}
-      />
+      {dataMode === 'live' && incidentsQuery.isLoading ? (
+        <CoreSpinLoader minHeight="220px" />
+      ) : (
+        <Table<Incident>
+          rowKey="id"
+          columns={columns}
+          dataSource={incidents}
+          loading={false}
+          pagination={{ pageSize: 20, showSizeChanger: false }}
+          locale={{ emptyText: '暂无诊断任务' }}
+        />
+      )}
     </div>
   );
 }

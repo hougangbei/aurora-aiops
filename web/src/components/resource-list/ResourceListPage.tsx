@@ -3,6 +3,8 @@ import { ProTable, type ProColumns } from '@ant-design/pro-components';
 import { Button, Empty, Input, Space, Typography, type TableProps } from 'antd';
 import { type Key, type ReactNode, useDeferredValue, useMemo, useState } from 'react';
 
+import { CoreSpinLoader } from '../ui/core-spin-loader';
+
 type MetricTone = 'teal' | 'blue' | 'amber' | 'slate';
 
 export type ResourceMetric = {
@@ -121,34 +123,38 @@ export function ResourceListPage<T extends object>({
           </Space>
         </div>
 
-        <ProTable<T>
-          rowKey={rowKey}
-          columns={columns}
-          dataSource={filteredData}
-          loading={loading}
-          search={false}
-          options={false}
-          toolBarRender={false}
-          tableAlertRender={false}
-          tableAlertOptionRender={false}
-          cardBordered={false}
-          dateFormatter="string"
-          pagination={{
-            defaultPageSize: paginationPageSize,
-            showSizeChanger: true,
-            pageSizeOptions: [10, 20, 50],
-          }}
-          locale={{
-            emptyText: (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={<span className="text-sm text-slate-500">{emptyDescription}</span>}
-              />
-            ),
-          }}
-          scroll={{ x: 'max-content' }}
-          onRow={onRow}
-        />
+        {loading ? (
+          <CoreSpinLoader minHeight="220px" />
+        ) : (
+          <ProTable<T>
+            rowKey={rowKey}
+            columns={columns}
+            dataSource={filteredData}
+            loading={false}
+            search={false}
+            options={false}
+            toolBarRender={false}
+            tableAlertRender={false}
+            tableAlertOptionRender={false}
+            cardBordered={false}
+            dateFormatter="string"
+            pagination={{
+              defaultPageSize: paginationPageSize,
+              showSizeChanger: true,
+              pageSizeOptions: [10, 20, 50],
+            }}
+            locale={{
+              emptyText: (
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={<span className="text-sm text-slate-500">{emptyDescription}</span>}
+                />
+              ),
+            }}
+            scroll={{ x: 'max-content' }}
+            onRow={onRow}
+          />
+        )}
       </section>
     </section>
   );

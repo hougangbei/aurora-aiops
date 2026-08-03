@@ -271,6 +271,11 @@
   color: rgba(226, 235, 255, 0.66);
 }
 
+.login-field-shell .ant-input::placeholder {
+  color: rgba(226, 235, 255, 0.78) !important;
+  opacity: 1;
+}
+
 .login-input:focus,
 .login-field-shell .ant-input-affix-wrapper-focused,
 .login-field-shell .ant-input:focus {
@@ -278,7 +283,7 @@
 }
 
 .login-field-shell .ant-input-password-icon {
-  color: rgba(210, 220, 255, 0.9);
+  color: rgba(210, 220, 255, 0.9) !important;
 }
 
 .login-error {

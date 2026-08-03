@@ -34,7 +34,7 @@ function NavigationPanel({
           <BrandLogo size={42} />
           <div className="min-w-0 flex-1">
             <div className="flex flex-col">
-              <span className="text-lg font-bold text-gray-900">kubejojo</span>
+              <span className="text-lg font-bold text-gray-900">AIOps 平台</span>
               <VersionBadge />
             </div>
           </div>

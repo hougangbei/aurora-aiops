@@ -1,4 +1,7 @@
-import { App, Alert, Button, Card, Form, Input, Space, Typography } from 'antd';
+import { useRef } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
+
+import { App, Alert, Button, Form, Input } from 'antd';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AxiosError } from 'axios';
 import { useNavigate } from 'react-router-dom';
@@ -6,12 +9,15 @@ import { useNavigate } from 'react-router-dom';
 import { loginWithPassword } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 
+import './LoginPage.css';
+
 type LoginFormValues = {
   username: string;
   password: string;
 };
 
 export function LoginPage() {
+  const stageRef = useRef<HTMLDivElement>(null);
   const { message } = App.useApp();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -39,6 +45,25 @@ export function LoginPage() {
     navigate('/cluster/overview', { replace: true });
   };
 
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (
+      event.pointerType === 'touch' ||
+      (typeof window !== 'undefined' &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+    ) {
+      return;
+    }
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    event.currentTarget.style.setProperty('--pointer-x', `${event.clientX - rect.left}px`);
+    event.currentTarget.style.setProperty('--pointer-y', `${event.clientY - rect.top}px`);
+  };
+
+  const handlePointerLeave = () => {
+    stageRef.current?.style.setProperty('--pointer-x', '50%');
+    stageRef.current?.style.setProperty('--pointer-y', '42%');
+  };
+
   const errorMessage =
     loginMutation.error instanceof AxiosError
       ? loginMutation.error.response?.data?.message ?? '登录失败，请检查账号密码'
@@ -47,94 +72,111 @@ export function LoginPage() {
         : '';
 
   return (
-    <main className="flex min-h-screen items-center justify-center px-4 py-10">
-      <Card className="w-full max-w-4xl overflow-hidden rounded-[32px] border-0 shadow-[0_28px_80px_rgba(15,23,42,0.12)]">
-        <div className="grid gap-0 lg:grid-cols-[0.82fr_1.18fr]">
-          <section className="bg-slate-950 px-7 py-8 text-white lg:px-8">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-teal-300">
-              Single Cluster Console
-            </div>
-            <Typography.Title level={1} className="!mb-4 !mt-4 !text-white">
-              kubejojo
-            </Typography.Title>
-            <Typography.Paragraph className="!mb-5 text-sm leading-7 text-slate-300">
-              面向单集群 Kubernetes 运维场景，提供统一的资源导航与控制台入口。
-            </Typography.Paragraph>
-            <div className="space-y-3">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <Typography.Text className="!text-white">资源域导航</Typography.Text>
-                <Typography.Paragraph className="!mb-0 !mt-2 text-slate-300">
-                  集群、拓扑、工作负载、网络、存储、安全、配置、资源治理。
-                </Typography.Paragraph>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <Typography.Text className="!text-white">运维首页</Typography.Text>
-                <Typography.Paragraph className="!mb-0 !mt-2 text-slate-300">
-                  展示状态卡、资源使用、Warning 事件、节点与命名空间概览。
-                </Typography.Paragraph>
-              </div>
-            </div>
-          </section>
+    <main className="login-page">
+      <div
+        ref={stageRef}
+        className="login-stage"
+        onPointerMove={handlePointerMove}
+        onPointerLeave={handlePointerLeave}
+      >
+        <div className="login-cursor-glow" aria-hidden="true" />
+        <div className="login-scanlines" aria-hidden="true" />
 
-          <section className="px-8 py-8 lg:px-10">
-            <div className="mb-7">
-              <Typography.Title level={2}>登录平台</Typography.Title>
-              <Typography.Paragraph type="secondary" className="!mb-0">
-                使用平台账号密码登录，登录后自动接入已配置的 Kubernetes 集群。
-              </Typography.Paragraph>
-              <Typography.Paragraph type="secondary" className="!mt-3 !mb-0">
-                仅查看前端效果时，可以直接使用演示模式进入。
-              </Typography.Paragraph>
+        <section className="login-panel" aria-labelledby="login-title">
+          <header className="login-panel-header">
+            <p className="login-node-label">SYSTEM NODE: AURORA-CORE</p>
+            <div className="login-mark" aria-hidden="true">
+              A
             </div>
-            {errorMessage ? (
-              <Alert
-                showIcon
-                type="error"
-                className="!mb-5"
-                message={errorMessage}
+            <h1 className="login-title" id="login-title">
+              AURORA
+              <br />
+              ACCESS
+            </h1>
+            <p className="login-subtitle">
+              面向单集群 Kubernetes 运维场景的安全访问入口。
+              <br />
+              Authenticate to continue into the Aurora control plane.
+            </p>
+          </header>
+
+          {errorMessage ? (
+            <Alert
+              showIcon
+              type="error"
+              className="login-error"
+              message={errorMessage}
+            />
+          ) : null}
+
+          <Form layout="vertical" onFinish={handleFinish} className="login-form">
+            <Form.Item
+              className="login-field login-field-shell"
+              htmlFor="login-username"
+              label="用户身份 / User Identity"
+              name="username"
+              rules={[{ required: true, message: '请输入用户名' }]}
+            >
+              <Input
+                id="login-username"
+                className="login-input"
+                prefix={
+                  <span className="login-field-mark" aria-hidden="true">
+                    ID
+                  </span>
+                }
+                placeholder="请输入平台用户名"
+                autoComplete="username"
               />
-            ) : null}
-            <Form layout="vertical" onFinish={handleFinish}>
-              <Form.Item
-                label="用户名"
-                name="username"
-                rules={[{ required: true, message: '请输入用户名' }]}
+            </Form.Item>
+
+            <Form.Item
+              className="login-field login-field-shell"
+              htmlFor="login-password"
+              label="序列密钥 / Sequence Key"
+              name="password"
+              rules={[{ required: true, message: '请输入密码' }]}
+            >
+              <Input.Password
+                id="login-password"
+                className="login-input"
+                prefix={
+                  <span className="login-field-mark" aria-hidden="true">
+                    KEY
+                  </span>
+                }
+                placeholder="请输入密码"
+                autoComplete="current-password"
+              />
+            </Form.Item>
+
+            <div className="login-actions">
+              <Button
+                type="primary"
+                htmlType="submit"
+                block
+                className="login-submit"
+                loading={loginMutation.isPending}
               >
-                <Input placeholder="请输入平台用户名" autoComplete="username" />
-              </Form.Item>
-              <Form.Item
-                label="密码"
-                name="password"
-                rules={[{ required: true, message: '请输入密码' }]}
+                INITIALIZE SESSION ↗
+              </Button>
+              <Button
+                block
+                className="login-demo"
+                onClick={handleDemoEnter}
+                disabled={loginMutation.isPending}
               >
-                <Input.Password
-                  placeholder="请输入密码"
-                  autoComplete="current-password"
-                />
-              </Form.Item>
-              <Space direction="vertical" size="middle" className="w-full">
-                <Button
-                  type="primary"
-                  htmlType="submit"
-                  size="large"
-                  block
-                  loading={loginMutation.isPending}
-                >
-                  登录
-                </Button>
-                <Button
-                  size="large"
-                  block
-                  onClick={handleDemoEnter}
-                  disabled={loginMutation.isPending}
-                >
-                  进入演示
-                </Button>
-              </Space>
-            </Form>
-          </section>
-        </div>
-      </Card>
+                进入演示模式
+              </Button>
+            </div>
+          </Form>
+
+          <footer className="login-footer">
+            <span>ENCRYPTED CHANNEL</span>
+            <span>AURORA AIOPS · V1.0.0</span>
+          </footer>
+        </section>
+      </div>
     </main>
   );
 }

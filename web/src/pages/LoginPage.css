@@ -156,8 +156,6 @@
 }
 
 .login-field {
-  display: grid;
-  gap: 8px;
   margin: 0;
 }
 
@@ -177,7 +175,29 @@
 }
 
 .login-field-shell {
+  margin: 0;
+}
+
+.login-field-shell .ant-form-item-row {
   display: flex;
+  width: 100%;
+  flex-direction: column;
+}
+
+.login-field-shell .ant-form-item-label,
+.login-field-shell .ant-form-item-control {
+  width: 100%;
+  max-width: 100%;
+}
+
+.login-field-shell .ant-form-item-label {
+  flex: 0 0 auto;
+}
+
+.login-field-shell .ant-form-item-control-input-content {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
   min-height: 58px;
   align-items: center;
   gap: 10px;
@@ -189,7 +209,7 @@
     transform 0.35s;
 }
 
-.login-field-shell:focus-within {
+.login-field-shell .ant-form-item-control-input-content:focus-within {
   border-color: #9ba8ff;
   background: rgba(255, 255, 255, 0.09);
   box-shadow: 0 0 25px rgba(112, 145, 255, 0.2);
@@ -213,11 +233,19 @@
 
 .login-field-shell .ant-input-affix-wrapper,
 .login-field-shell .ant-input {
+  flex: 1;
   min-width: 0;
   border: 0;
   padding: 0;
   background: transparent;
   box-shadow: none;
+}
+
+.login-field-shell .ant-form-item-control,
+.login-field-shell .ant-form-item-control-input,
+.login-field-shell .ant-form-item-control-input-content {
+  min-width: 0;
+  flex: 1;
 }
 
 .login-input {
@@ -302,6 +330,12 @@
 
 .login-submit.ant-btn-loading {
   opacity: 0.78;
+}
+
+.login-actions {
+  display: grid;
+  gap: 12px;
+  margin-top: 2px;
 }
 
 .login-demo {
@@ -401,12 +435,12 @@
     transition: none;
   }
 
-  .login-field-shell,
+  .login-field-shell .ant-form-item-control-input-content,
   .login-submit {
     transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
   }
 
-  .login-field-shell:focus-within {
+  .login-field-shell .ant-form-item-control-input-content:focus-within {
     transform: none;
     box-shadow: none;
   }

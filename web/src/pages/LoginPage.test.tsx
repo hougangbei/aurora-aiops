@@ -30,7 +30,7 @@ function renderLoginPage() {
 }
 
 function buttonByText(text: string) {
-  // antd 会在两字符中文按钮文本中插入空格（“登 录”），因此按去空白比较。
+  // Ant Design may normalize button text nodes, so compare the visible text without whitespace.
   const normalized = text.replace(/\s+/g, '');
   const button = screen
     .getAllByRole('button')
@@ -49,7 +49,7 @@ describe('LoginPage', () => {
 
   it('renders the neural access structure with labelled Signal Capsule fields', () => {
     renderLoginPage();
-    expect(screen.getByRole('heading', { name: /AURORA ACCESS/i })).toBeVisible();
+    expect(screen.getByRole('heading', { name: /AURORA\s*ACCESS/i })).toBeVisible();
     expect(screen.getByText('SYSTEM NODE: AURORA-CORE')).toBeVisible();
     expect(screen.getByLabelText('用户身份 / User Identity')).toBeVisible();
     expect(screen.getByLabelText('序列密钥 / Sequence Key')).toBeVisible();
@@ -71,7 +71,7 @@ describe('LoginPage', () => {
     fireEvent.change(screen.getByPlaceholderText('请输入密码'), {
       target: { value: 'correct-password' },
     });
-    fireEvent.click(buttonByText('登录'));
+    fireEvent.click(buttonByText('INITIALIZE SESSION ↗'));
 
     await waitFor(() => {
       expect(loginWithPassword).toHaveBeenCalledWith('admin', 'correct-password');
@@ -94,7 +94,7 @@ describe('LoginPage', () => {
 
   it('enters demo mode as local state without a session', async () => {
     renderLoginPage();
-    fireEvent.click(screen.getByRole('button', { name: '进入演示' }));
+    fireEvent.click(screen.getByRole('button', { name: '进入演示模式' }));
 
     await waitFor(() => {
       expect(useAppStore.getState().authenticated).toBe(true);

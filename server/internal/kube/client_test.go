@@ -1,6 +1,8 @@
 package kube
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -87,9 +89,20 @@ func TestNewSharedClientPrecedenceExplicitWins(t *testing.T) {
 }
 
 func TestNewSharedClientPrecedenceUsesInCluster(t *testing.T) {
+	runtimeDir := t.TempDir()
+	t.Setenv(runtimeDirEnv, runtimeDir)
+	tokenPath := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenPath, []byte("sa-token"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	client, err := newSharedClientWithLoaders("", Options{}, clientConfigLoaders{
 		inCluster: func() (*rest.Config, error) {
-			return &rest.Config{Host: "https://in-cluster:6443", BearerToken: "sa-token"}, nil
+			return &rest.Config{
+				Host:            "https://in-cluster:6443",
+				BearerToken:     "sa-token",
+				BearerTokenFile: tokenPath,
+				TLSClientConfig: rest.TLSClientConfig{Insecure: true},
+			}, nil
 		},
 		homeDir: func() (string, error) { return "/fake/home", nil },
 	})
@@ -99,8 +112,33 @@ func TestNewSharedClientPrecedenceUsesInCluster(t *testing.T) {
 	if client.AuthMode != "in-cluster" {
 		t.Fatalf("auth mode=%q want in-cluster", client.AuthMode)
 	}
-	if client.ConfigPath != "" {
-		t.Fatalf("config path=%q want empty", client.ConfigPath)
+	if client.ConfigPath == "" {
+		t.Fatal("in-cluster identity must provide a runtime kubeconfig for kubectl consumers")
+	}
+	if !strings.HasPrefix(client.ConfigPath, runtimeDir+string(os.PathSeparator)) {
+		t.Fatalf("config path=%q must be inside runtime dir %q", client.ConfigPath, runtimeDir)
+	}
+	info, err := os.Stat(client.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("runtime kubeconfig mode=%#o want 0600", got)
+	}
+	content, err := os.ReadFile(client.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	if !strings.Contains(text, tokenPath) {
+		t.Fatalf("runtime kubeconfig must reference token file: %s", text)
+	}
+	if strings.Contains(text, "sa-token") {
+		t.Fatalf("runtime kubeconfig must not embed bearer token: %s", text)
+	}
+	if !strings.Contains(text, "server: https://in-cluster:6443") ||
+		!strings.Contains(text, "insecure-skip-tls-verify: true") {
+		t.Fatalf("runtime kubeconfig must preserve cluster TLS endpoint: %s", text)
 	}
 	if client.RawConfig.CurrentContext != "in-cluster" {
 		t.Fatalf("current context=%q want in-cluster", client.RawConfig.CurrentContext)
@@ -175,5 +213,36 @@ func TestNewSharedClientExplicitErrorRedactsPath(t *testing.T) {
 	}
 	if strings.Contains(msg, path) {
 		t.Fatalf("error must not print local path: %q", msg)
+	}
+}
+
+func TestRedactConfigPathPreservesErrorChain(t *testing.T) {
+	sentinel := errors.New("sentinel config failure")
+	path := filepath.Join(t.TempDir(), "sensitive", "config")
+	err := redactConfigPath(fmt.Errorf("open %s: %w", path, sentinel), path)
+	if strings.Contains(err.Error(), path) {
+		t.Fatalf("error must redact path: %q", err)
+	}
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("redaction must preserve errors.Is chain: %v", err)
+	}
+}
+
+func TestNewSharedClientRedactsInClusterServiceAccountPaths(t *testing.T) {
+	sentinel := errors.New("in-cluster sentinel")
+	_, err := newSharedClientWithLoaders("", Options{}, clientConfigLoaders{
+		inCluster: func() (*rest.Config, error) {
+			return nil, fmt.Errorf("read %s: %w", serviceAccountTokenPath, sentinel)
+		},
+		homeDir: func() (string, error) { return "/missing/home", nil },
+	})
+	if err == nil {
+		t.Fatal("expected identity resolution failure")
+	}
+	if strings.Contains(err.Error(), serviceAccountTokenPath) {
+		t.Fatalf("error must redact service account path: %q", err)
+	}
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("combined error must preserve in-cluster chain: %v", err)
 	}
 }

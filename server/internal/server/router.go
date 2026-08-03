@@ -1589,7 +1589,7 @@ func newRouter(
 					c.JSON(http.StatusOK, response.Success(items))
 				})
 
-				authorized.GET("/secrets/:namespace/:name/yaml", func(c *gin.Context) {
+				authorized.GET("/secrets/:namespace/:name/yaml", RequireAdmin(), func(c *gin.Context) {
 					result, err := mustClusterService(c).GetSecretYAML(
 						c.Request.Context(),
 						c.Param("namespace"),

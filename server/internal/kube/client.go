@@ -10,7 +10,14 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
+)
+
+const (
+	runtimeDirEnv           = "KUBEJOJO_RUNTIME_DIR"
+	serviceAccountTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+	serviceAccountCAPath    = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 )
 
 type Client struct {
@@ -69,19 +76,87 @@ func newSharedClientWithLoaders(path string, options Options, loaders clientConf
 	config, err := loaders.inCluster()
 	if err == nil {
 		applyOptions(config, options)
-		return newClient(config, "", "in-cluster", clientcmdapiConfig{CurrentContext: "in-cluster"})
+		configPath, writeErr := writeInClusterKubeconfig(config)
+		if writeErr != nil {
+			return nil, fmt.Errorf("write in-cluster runtime kubeconfig: %w", writeErr)
+		}
+		return newClient(config, configPath, "in-cluster", clientcmdapiConfig{
+			CurrentContext: "in-cluster",
+			AuthInfoName:   "in-cluster",
+		})
 	}
+	inClusterErr := redactConfigPaths(err, serviceAccountTokenPath, serviceAccountCAPath)
 
 	home, homeErr := loaders.homeDir()
 	if homeErr != nil {
-		return nil, fmt.Errorf("in-cluster config: %v; resolve default kubeconfig: %w", err, homeErr)
+		return nil, fmt.Errorf("in-cluster config: %w; resolve default kubeconfig: %w", inClusterErr, homeErr)
 	}
 	fallback := filepath.Join(home, ".kube", "config")
 	client, fileErr := newKubeconfigClient(fallback, options)
 	if fileErr != nil {
-		return nil, fmt.Errorf("in-cluster config unavailable: %v; default kubeconfig unavailable: %w", err, redactConfigPath(fileErr, fallback))
+		return nil, fmt.Errorf("in-cluster config unavailable: %w; default kubeconfig unavailable: %w", inClusterErr, redactConfigPath(fileErr, fallback))
 	}
 	return client, nil
+}
+
+// writeInClusterKubeconfig materializes only the information kubectl needs.
+// It references the projected ServiceAccount token instead of copying the
+// bearer token value, and the generated file is private to the server process.
+func writeInClusterKubeconfig(config *rest.Config) (string, error) {
+	tokenFile := strings.TrimSpace(config.BearerTokenFile)
+	if tokenFile == "" {
+		return "", fmt.Errorf("service account token file is required")
+	}
+
+	runtimeDir := strings.TrimSpace(os.Getenv(runtimeDirEnv))
+	if runtimeDir == "" {
+		runtimeDir = os.TempDir()
+	}
+	if err := os.MkdirAll(runtimeDir, 0o700); err != nil {
+		return "", fmt.Errorf("prepare runtime directory: %w", redactConfigPath(err, runtimeDir))
+	}
+
+	raw := clientcmdapi.NewConfig()
+	raw.Clusters["in-cluster"] = &clientcmdapi.Cluster{
+		Server:                   config.Host,
+		CertificateAuthority:     config.TLSClientConfig.CAFile,
+		CertificateAuthorityData: config.TLSClientConfig.CAData,
+		InsecureSkipTLSVerify:    config.TLSClientConfig.Insecure,
+	}
+	raw.AuthInfos["in-cluster"] = &clientcmdapi.AuthInfo{TokenFile: tokenFile}
+	raw.Contexts["in-cluster"] = &clientcmdapi.Context{
+		Cluster:  "in-cluster",
+		AuthInfo: "in-cluster",
+	}
+	raw.CurrentContext = "in-cluster"
+	content, err := clientcmd.Write(*raw)
+	if err != nil {
+		return "", fmt.Errorf("encode runtime kubeconfig: %w", err)
+	}
+
+	file, err := os.CreateTemp(runtimeDir, "kubejojo-kubeconfig-*")
+	if err != nil {
+		return "", fmt.Errorf("create runtime kubeconfig: %w", redactConfigPath(err, runtimeDir))
+	}
+	path := file.Name()
+	keep := false
+	defer func() {
+		_ = file.Close()
+		if !keep {
+			_ = os.Remove(path)
+		}
+	}()
+	if err := file.Chmod(0o600); err != nil {
+		return "", fmt.Errorf("secure runtime kubeconfig: %w", err)
+	}
+	if _, err := file.Write(content); err != nil {
+		return "", fmt.Errorf("write runtime kubeconfig: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return "", fmt.Errorf("close runtime kubeconfig: %w", err)
+	}
+	keep = true
+	return path, nil
 }
 
 // newKubeconfigClient builds a client whose identity comes entirely from the
@@ -127,13 +202,40 @@ func applyOptions(config *rest.Config, options Options) {
 // replacing every occurrence of the resolved path with [redacted] so failures
 // never leak the local filesystem layout.
 func redactConfigPath(err error, path string) error {
+	return redactConfigPaths(err, path)
+}
+
+type redactedPathError struct {
+	err   error
+	paths []string
+}
+
+func (e *redactedPathError) Error() string {
+	message := e.err.Error()
+	for _, path := range e.paths {
+		if path != "" {
+			message = strings.ReplaceAll(message, path, "[redacted]")
+		}
+	}
+	return message
+}
+
+func (e *redactedPathError) Unwrap() error { return e.err }
+
+func redactConfigPaths(err error, paths ...string) error {
 	if err == nil {
 		return nil
 	}
-	if path == "" {
+	filtered := make([]string, 0, len(paths))
+	for _, path := range paths {
+		if path != "" {
+			filtered = append(filtered, path)
+		}
+	}
+	if len(filtered) == 0 {
 		return err
 	}
-	return fmt.Errorf("%s", strings.ReplaceAll(err.Error(), path, "[redacted]"))
+	return &redactedPathError{err: err, paths: filtered}
 }
 
 func newClient(

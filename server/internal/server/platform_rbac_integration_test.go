@@ -80,7 +80,7 @@ func newPlatformRBACRouter(t *testing.T) (*gin.Engine, *auth.Service) {
 		snapshotStore,
 		auditRepo,
 	)
-	remediationService := remediation.NewService(aiopsService, aiops.NewRunRepository(db), kubeClient, executor, auditRepo, snapshotStore)
+	remediationService := remediation.NewService(aiopsService, aiops.NewRunRepository(db), kubeClient, executor, auditRepo, snapshotStore, remediation.NewDecisionStore(db))
 
 	updateService := service.NewUpdateService(buildinfo.Info{}, config.UpdateConfig{}, false)
 	systemLockService := service.NewSystemOperationLockService()
@@ -139,6 +139,7 @@ func TestPlatformRBACRoleMatrix(t *testing.T) {
 		wantCode int
 	}{
 		{"viewer reads incidents", http.MethodGet, "/api/v1/aiops/incidents", "", "viewer", http.StatusOK},
+		{"viewer cannot read secret yaml", http.MethodGet, "/api/v1/secrets/default/app/yaml", "", "viewer", http.StatusForbidden},
 		{"viewer cannot create incident", http.MethodPost, "/api/v1/aiops/incidents", `{"summary":"s","severity":"critical","namespace":"default","resourceKind":"Pod","resourceName":"api-0"}`, "viewer", http.StatusForbidden},
 		{"operator creates incident", http.MethodPost, "/api/v1/aiops/incidents", `{"summary":"s","severity":"critical","namespace":"default","resourceKind":"Pod","resourceName":"api-0"}`, "operator", http.StatusCreated},
 		{"operator cannot record experiment run", http.MethodPost, "/api/v1/experiments/runs", validExperimentRunBody, "operator", http.StatusForbidden},
@@ -230,11 +231,14 @@ func TestPlatformRBACClassifiesEveryRegisteredRoute(t *testing.T) {
 	router, _ := newPlatformRBACRouter(t)
 
 	const (
-		execWs = "/api/v1/pods/:namespace/:name/exec/ws"
 		login  = "/api/v1/auth/login"
 		logout = "/api/v1/auth/logout"
 		apiV1  = "/api/v1"
 	)
+	adminReadPaths := map[string]struct{}{
+		"/api/v1/pods/:namespace/:name/exec/ws": {},
+		"/api/v1/secrets/:namespace/:name/yaml": {},
+	}
 	readOnly := func(method string) bool {
 		return method == http.MethodGet || method == http.MethodHead || method == http.MethodOptions
 	}
@@ -253,7 +257,7 @@ func TestPlatformRBACClassifiesEveryRegisteredRoute(t *testing.T) {
 
 		switch {
 		case readOnly(ri.Method):
-			if ri.Path == execWs {
+			if _, isAdminRead := adminReadPaths[ri.Path]; isAdminRead {
 				if !slices.Equal(got, []auth.Role{auth.RoleAdmin}) {
 					t.Errorf("%s %s: roles=%v want [admin]", ri.Method, ri.Path, got)
 				}

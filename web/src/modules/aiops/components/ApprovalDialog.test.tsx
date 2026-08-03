@@ -148,6 +148,59 @@ describe('ApprovalDialog', () => {
     expect(screen.queryByRole('button', { name: /批准执行/i })).toBeNull();
   });
 
+  it('fail-closes when the effective risk enum is invalid', async () => {
+    getRunsMock.mockResolvedValue({
+      runs: [
+        remediationOnlyRun('low'),
+        run('run-risk', 'risk_review', {
+          effectiveRisk: 'critical',
+          approvable: true,
+          actions: [
+            {
+              kind: 'restart_deployment',
+              resourceKind: 'Deployment',
+              resourceName: 'api-0',
+              allowed: true,
+              risk: 'low',
+              reason: 'restart deployment',
+            },
+          ],
+          modelReview: { riskLevel: 'low', approved: true },
+        }),
+      ],
+    });
+    renderDialog();
+    await screen.findByText(/有效风险评审缺失/i);
+    expect(screen.queryByRole('button', { name: /批准执行/i })).toBeNull();
+  });
+
+  it('fail-closes without crashing when blockers has the wrong shape', async () => {
+    getRunsMock.mockResolvedValue({
+      runs: [
+        remediationOnlyRun('low'),
+        run('run-risk', 'risk_review', {
+          effectiveRisk: 'low',
+          approvable: true,
+          blockers: 'not-an-array',
+          actions: [
+            {
+              kind: 'suspend_cronjob',
+              resourceKind: 'CronJob',
+              resourceName: 'job-0',
+              allowed: true,
+              risk: 'low',
+              reason: 'suspend cronjob',
+            },
+          ],
+          modelReview: { riskLevel: 'low', approved: true },
+        }),
+      ],
+    });
+    renderDialog();
+    await screen.findByText(/有效风险评审缺失/i);
+    expect(screen.queryByRole('button', { name: /批准执行/i })).toBeNull();
+  });
+
   it('disables repeated approval clicks while pending', async () => {
     getRunsMock.mockResolvedValue(
       reviewFixture({

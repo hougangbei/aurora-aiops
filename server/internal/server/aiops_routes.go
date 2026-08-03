@@ -7,7 +7,9 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
@@ -301,6 +303,13 @@ type remediationReasonRequest struct {
 	Reason string `json:"reason"`
 }
 
+const minRemediationReasonLength = 8
+
+func normalizeRemediationReason(raw string) (string, bool) {
+	reason := strings.TrimSpace(raw)
+	return reason, utf8.RuneCountInString(reason) >= minRemediationReasonLength
+}
+
 func handleApproveRemediation(svc *aiops.Service, remediationService *remediation.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		handleRemediationDecision(c, svc, remediationService, "approve")
@@ -317,15 +326,20 @@ func handleRemediationDecision(c *gin.Context, svc *aiops.Service, remediationSe
 	id := c.Param("id")
 	actor, _ := ActorFromContext(c)
 	var req remediationReasonRequest
-	if err := c.ShouldBindJSON(&req); err != nil || req.Reason == "" {
-		c.JSON(http.StatusBadRequest, response.Failure("INVALID_REMEDIATION_REQUEST", "缺少审批理由"))
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, response.Failure("INVALID_REMEDIATION_REQUEST", "请求体格式不正确"))
+		return
+	}
+	reason, valid := normalizeRemediationReason(req.Reason)
+	if !valid {
+		c.JSON(http.StatusBadRequest, response.Failure("INVALID_REMEDIATION_REQUEST", "审批理由至少需要 8 个字符"))
 		return
 	}
 	var err error
 	if kind == "approve" {
-		err = remediationService.Approve(c.Request.Context(), id, actor.Username, req.Reason)
+		err = remediationService.Approve(c.Request.Context(), id, actor.Username, reason)
 	} else {
-		err = remediationService.Reject(c.Request.Context(), id, actor.Username, req.Reason)
+		err = remediationService.Reject(c.Request.Context(), id, actor.Username, reason)
 	}
 	if err != nil {
 		respondRemediationError(c, err)

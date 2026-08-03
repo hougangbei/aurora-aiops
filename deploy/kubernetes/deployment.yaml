@@ -30,6 +30,8 @@ spec:
           value: ":8080"
         - name: KUBEJOJO_AIOPS_DB
           value: /var/lib/kubejojo/kubejojo.db
+        - name: KUBEJOJO_RUNTIME_DIR
+          value: /var/run/kubejojo
         # 平台身份通过 ServiceAccount（in-cluster）访问集群，不挂载 kubeconfig。
         - name: KUBEJOJO_BOOTSTRAP_ADMIN_USER
           valueFrom:
@@ -62,6 +64,8 @@ spec:
         volumeMounts:
         - name: data
           mountPath: /var/lib/kubejojo
+        - name: runtime
+          mountPath: /var/run/kubejojo
         resources:
           requests:
             cpu: 50m
@@ -73,3 +77,6 @@ spec:
       - name: data
         persistentVolumeClaim:
           claimName: kubejojo-data
+      - name: runtime
+        emptyDir:
+          medium: Memory

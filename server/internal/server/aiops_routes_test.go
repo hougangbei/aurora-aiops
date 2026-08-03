@@ -64,6 +64,49 @@ type responseEnvelope struct {
 	Data    json.RawMessage `json:"data"`
 }
 
+func TestNormalizeRemediationReason(t *testing.T) {
+	tests := []struct {
+		name  string
+		raw   string
+		want  string
+		valid bool
+	}{
+		{name: "whitespace", raw: "   \t\n", want: "", valid: false},
+		{name: "seven unicode characters", raw: "一二三四五六七", want: "一二三四五六七", valid: false},
+		{name: "eight unicode characters", raw: "  一二三四五六七八  ", want: "一二三四五六七八", valid: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, valid := normalizeRemediationReason(tt.raw)
+			if got != tt.want || valid != tt.valid {
+				t.Fatalf("normalizeRemediationReason(%q)=(%q,%v) want (%q,%v)", tt.raw, got, valid, tt.want, tt.valid)
+			}
+		})
+	}
+}
+
+func TestRemediationDecisionRoutesRejectShortReasons(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, kind := range []string{"approve", "reject"} {
+		t.Run(kind, func(t *testing.T) {
+			router := gin.New()
+			router.POST("/incidents/:id/decision", func(c *gin.Context) {
+				handleRemediationDecision(c, nil, nil, kind)
+			})
+			req := httptest.NewRequest(http.MethodPost, "/incidents/inc-1/decision", strings.NewReader(`{"reason":"一二三四五六七"}`))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status=%d want 400 body=%s", rec.Code, rec.Body.String())
+			}
+			if !strings.Contains(rec.Body.String(), "至少需要 8 个字符") {
+				t.Fatalf("unexpected response: %s", rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestCreateIncidentRoute(t *testing.T) {
 	router, _, cookie := newTestRouter(t)
 

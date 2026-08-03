@@ -106,6 +106,7 @@ func Run(info buildinfo.Info) error {
 		executor,
 		auditRepo,
 		snapshotStore,
+		remediation.NewDecisionStore(db),
 	)
 
 	updateService := service.NewUpdateService(info, cfg.Update, web.HasEmbeddedFrontend())

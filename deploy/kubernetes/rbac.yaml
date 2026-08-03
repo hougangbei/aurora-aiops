@@ -11,10 +11,14 @@ metadata:
   name: kubejojo-readonly
 rules:
 - apiGroups: [""]
-  resources: ["pods", "services", "endpoints", "configmaps", "secrets",
-              "persistentvolumeclaims", "namespaces", "nodes", "events",
-              "serviceaccounts"]
+  resources: ["pods", "services", "endpoints", "configmaps",
+              "persistentvolumeclaims", "persistentvolumes", "namespaces",
+              "nodes", "events", "serviceaccounts", "resourcequotas",
+              "limitranges"]
   verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get"]
 - apiGroups: ["apps"]
   resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
   verbs: ["get", "list", "watch"]
@@ -25,10 +29,16 @@ rules:
   resources: ["networkpolicies", "ingresses", "ingressclasses"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["storage.k8s.io"]
-  resources: ["storageclasses", "persistentvolumes"]
+  resources: ["storageclasses"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["autoscaling"]
   resources: ["horizontalpodautoscalers"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["autoscaling.k8s.io"]
+  resources: ["verticalpodautoscalers"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["metrics.k8s.io"]
   resources: ["pods", "nodes"]

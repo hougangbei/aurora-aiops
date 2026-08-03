@@ -29,7 +29,8 @@ func requiredPlatformRoles(method, fullPath string) []auth.Role {
 		return nil
 	}
 	if method == http.MethodGet {
-		if fullPath == "/api/v1/pods/:namespace/:name/exec/ws" {
+		if fullPath == "/api/v1/pods/:namespace/:name/exec/ws" ||
+			fullPath == "/api/v1/secrets/:namespace/:name/yaml" {
 			return []auth.Role{auth.RoleAdmin}
 		}
 		return nil

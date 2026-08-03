@@ -19,6 +19,44 @@ function parseActions(output: string): RemediationAction[] {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function isRisk(value: unknown): value is 'low' | 'medium' | 'high' {
+  return value === 'low' || value === 'medium' || value === 'high';
+}
+
+function isModelRisk(value: unknown): value is 'low' | 'medium' | 'high' | 'critical' {
+  return isRisk(value) || value === 'critical';
+}
+
+function isPolicyActionReview(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.kind === 'string' &&
+    typeof value.resourceKind === 'string' &&
+    typeof value.resourceName === 'string' &&
+    typeof value.allowed === 'boolean' &&
+    isRisk(value.risk) &&
+    typeof value.reason === 'string'
+  );
+}
+
+function isModelReview(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isModelRisk(value.riskLevel) &&
+    typeof value.approved === 'boolean' &&
+    (value.blockers === undefined || isStringArray(value.blockers)) &&
+    (value.rationale === undefined || typeof value.rationale === 'string')
+  );
+}
+
 // parseEffectiveReview decodes the risk_review run output into the authoritative
 // effective review. It returns undefined on missing output, invalid JSON, or
 // invalid field shapes so the dialog fails closed instead of trusting bad data.
@@ -27,11 +65,16 @@ function parseEffectiveReview(output: string | undefined): EffectiveRiskReview |
     return undefined;
   }
   try {
-    const parsed = JSON.parse(output) as Partial<EffectiveRiskReview>;
+    const parsed: unknown = JSON.parse(output);
     if (
-      typeof parsed.effectiveRisk !== 'string' ||
+      !isRecord(parsed) ||
+      !isRisk(parsed.effectiveRisk) ||
       typeof parsed.approvable !== 'boolean' ||
-      !Array.isArray(parsed.actions)
+      (parsed.blockers !== undefined && !isStringArray(parsed.blockers)) ||
+      !Array.isArray(parsed.actions) ||
+      !parsed.actions.every(isPolicyActionReview) ||
+      (parsed.approvable && parsed.actions.length === 0) ||
+      !isModelReview(parsed.modelReview)
     ) {
       return undefined;
     }

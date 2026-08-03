@@ -41,6 +41,7 @@ type Service struct {
 	kube      kubernetes.Interface
 	executor  *Executor
 	audit     audit.Repository
+	decisions *DecisionStore
 	snapshots SnapshotStore
 	now       func() time.Time
 }
@@ -53,6 +54,7 @@ func NewService(
 	executor *Executor,
 	audit audit.Repository,
 	snapshots SnapshotStore,
+	decisions *DecisionStore,
 ) *Service {
 	return &Service{
 		aiops:     aiopsService,
@@ -60,6 +62,7 @@ func NewService(
 		kube:      kube,
 		executor:  executor,
 		audit:     audit,
+		decisions: decisions,
 		snapshots: snapshots,
 		now:       time.Now,
 	}
@@ -83,28 +86,20 @@ func (s *Service) Approve(ctx context.Context, incidentID, actor, reason string)
 	if !effective.Approvable {
 		return fmt.Errorf("%w: %s", ErrActionNotAllowed, strings.Join(effective.Blockers, "; "))
 	}
-	// Decide is the single compare-and-swap arbiter for concurrent decisions;
-	// only the winner reaches the audit append below.
-	if err := s.aiops.Decide(ctx, incidentID, aiops.StatusApproved); err != nil {
-		return err
-	}
-	_, err = s.audit.Append(ctx, audit.Record{
+	now := s.now().UTC()
+	return s.decisions.Decide(ctx, incidentID, aiops.StatusApproved, audit.Record{
 		Actor: actor, Action: "approve-remediation", Target: incidentID, Result: "approved",
-		Payload: reason, Timestamp: s.now().UTC(),
-	})
-	return err
+		Payload: reason, Timestamp: now,
+	}, now)
 }
 
 // Reject transitions an awaiting-approval incident to rejected and audits it.
 func (s *Service) Reject(ctx context.Context, incidentID, actor, reason string) error {
-	if err := s.aiops.Decide(ctx, incidentID, aiops.StatusRejected); err != nil {
-		return err
-	}
-	_, err := s.audit.Append(ctx, audit.Record{
+	now := s.now().UTC()
+	return s.decisions.Decide(ctx, incidentID, aiops.StatusRejected, audit.Record{
 		Actor: actor, Action: "reject-remediation", Target: incidentID, Result: "rejected",
-		Payload: reason, Timestamp: s.now().UTC(),
-	})
-	return err
+		Payload: reason, Timestamp: now,
+	}, now)
 }
 
 // Execute runs the approved remediation plan. On any failure the incident moves

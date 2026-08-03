@@ -132,7 +132,7 @@ func newAIOpsRouteRouter(t *testing.T) (*gin.Engine, *aiops.Service, *aiops.Work
 		snapshotStore,
 		auditRepo,
 	)
-	remediationService := remediation.NewService(svc, aiops.NewRunRepository(db), kubeClient, executor, auditRepo, snapshotStore)
+	remediationService := remediation.NewService(svc, aiops.NewRunRepository(db), kubeClient, executor, auditRepo, snapshotStore, remediation.NewDecisionStore(db))
 
 	router := gin.New()
 	api := router.Group("/api/v1")

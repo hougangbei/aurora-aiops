@@ -29,7 +29,7 @@ func newRemediationTestService(t *testing.T) (*Service, *aiops.Service, aiops.Ru
 	aiopsSvc := aiops.NewService(aiops.NewRepository(db))
 	auditRepo := audit.NewRepository(db)
 	runsRepo := aiops.NewRunRepository(db)
-	svc := NewService(aiopsSvc, runsRepo, nil, nil, auditRepo, nil)
+	svc := NewService(aiopsSvc, runsRepo, nil, nil, auditRepo, nil, NewDecisionStore(db))
 	return svc, aiopsSvc, runsRepo, auditRepo
 }
 
@@ -153,6 +153,50 @@ func TestApproveRejectConcurrentDecisionSingleWinner(t *testing.T) {
 	}
 	if got.Status != aiops.StatusApproved && got.Status != aiops.StatusRejected {
 		t.Fatalf("stored status=%s want a single terminal decision", got.Status)
+	}
+}
+
+// TestRejectRollsBackStatusWhenAuditAppendFails proves the incident decision
+// and its mandatory audit record share one transaction. A forced audit insert
+// failure must leave the incident awaiting approval.
+func TestRejectRollsBackStatusWhenAuditAppendFails(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "atomic-decision.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	aiopsSvc := aiops.NewService(aiops.NewRepository(db))
+	auditRepo := audit.NewRepository(db)
+	svc := NewService(aiopsSvc, aiops.NewRunRepository(db), nil, nil, auditRepo, nil, NewDecisionStore(db))
+	inc := awaitApprovalIncident(t, aiopsSvc)
+	if _, err := db.Exec(`
+CREATE TRIGGER fail_decision_audit
+BEFORE INSERT ON audit_records
+WHEN NEW.action IN ('approve-remediation', 'reject-remediation')
+BEGIN
+  SELECT RAISE(ABORT, 'forced audit failure');
+END`); err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	err = svc.Reject(context.Background(), inc.ID, "operator", "rejected by test")
+	if err == nil {
+		t.Fatal("reject must report the forced audit failure")
+	}
+	got, getErr := aiopsSvc.Get(context.Background(), inc.ID)
+	if getErr != nil {
+		t.Fatalf("get incident: %v", getErr)
+	}
+	if got.Status != aiops.StatusAwaitingApproval {
+		t.Fatalf("status=%s want awaiting_approval after audit rollback", got.Status)
+	}
+	records, listErr := auditRepo.List(context.Background())
+	if listErr != nil {
+		t.Fatalf("list audit: %v", listErr)
+	}
+	if len(records) != 0 {
+		t.Fatalf("audit records=%d want 0", len(records))
 	}
 }
 

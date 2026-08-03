@@ -36,8 +36,21 @@ kubectl auth reconcile --dry-run=client \
 if rg -q 'KUBEJOJO_KUBECONFIG|kubejojo-kubeconfig|name: kubeconfig' deploy/kubernetes/deployment.yaml; then
   fail "deployment must not mount or select kubeconfig"
 fi
+rg -q 'name: KUBEJOJO_RUNTIME_DIR' deploy/kubernetes/deployment.yaml || fail "runtime directory environment missing"
+rg -q 'value: /var/run/kubejojo' deploy/kubernetes/deployment.yaml || fail "runtime directory value missing"
+rg -q 'mountPath: /var/run/kubejojo' deploy/kubernetes/deployment.yaml || fail "runtime directory mount missing"
+rg -q 'medium: Memory' deploy/kubernetes/deployment.yaml || fail "runtime directory must use an in-memory volume"
 rg -q '^kind: ClusterRole$' deploy/kubernetes/rbac.yaml || fail "readonly ClusterRole missing"
 rg -q '^kind: ClusterRoleBinding$' deploy/kubernetes/rbac.yaml || fail "readonly ClusterRoleBinding missing"
+if rg -q '"secrets"' deploy/kubernetes/rbac.yaml; then
+  fail "readonly ClusterRole must not grant Secret access"
+fi
+rg -q '"pods/log"' deploy/kubernetes/rbac.yaml || fail "readonly ClusterRole must grant pod log access"
+rg -q '"persistentvolumes"' deploy/kubernetes/rbac.yaml || fail "readonly ClusterRole must grant persistent volume access"
+rg -q '"resourcequotas"' deploy/kubernetes/rbac.yaml || fail "readonly ClusterRole must grant resource quota access"
+rg -q '"limitranges"' deploy/kubernetes/rbac.yaml || fail "readonly ClusterRole must grant limit range access"
+rg -q 'apiGroups: \["rbac.authorization.k8s.io"\]' deploy/kubernetes/rbac.yaml || fail "readonly ClusterRole must grant RBAC resource access"
+rg -q 'apiGroups: \["autoscaling.k8s.io"\]' deploy/kubernetes/rbac.yaml || fail "readonly ClusterRole must grant VPA access"
 rg -q 'key: bootstrap-admin-user' deploy/kubernetes/deployment.yaml || fail "bootstrap admin user Secret key missing"
 rg -q 'key: bootstrap-admin-password' deploy/kubernetes/deployment.yaml || fail "bootstrap admin password Secret key missing"
 

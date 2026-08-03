@@ -28,21 +28,35 @@ func NewRepository(db *sql.DB) Repository {
 // inserts the new row. The hash is computed after the auto-increment id is
 // assigned, so the canonical record used for hashing carries its final id.
 func (r *sqlRepository) Append(ctx context.Context, record Record) (Record, error) {
-	record.Payload = RedactPayload(record.Payload)
-	record.Timestamp = record.Timestamp.UTC()
-	if record.Timestamp.IsZero() {
-		record.Timestamp = time.Now().UTC()
-	}
-
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Record{}, fmt.Errorf("begin audit tx: %w", err)
 	}
 	defer tx.Rollback()
 
+	record, err = AppendTx(ctx, tx, record)
+	if err != nil {
+		return Record{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Record{}, fmt.Errorf("commit audit tx: %w", err)
+	}
+	return record, nil
+}
+
+// AppendTx appends and seals an audit record inside the caller's transaction.
+// It lets a domain mutation and its mandatory audit record commit or roll back
+// as one unit while preserving the same hash-chain behavior as Repository.Append.
+func AppendTx(ctx context.Context, tx *sql.Tx, record Record) (Record, error) {
+	record.Payload = RedactPayload(record.Payload)
+	record.Timestamp = record.Timestamp.UTC()
+	if record.Timestamp.IsZero() {
+		record.Timestamp = time.Now().UTC()
+	}
+
 	// Read the previous hash before inserting, so it refers to the last
 	// committed record rather than the row about to be created.
-	previousHash, err := r.latestHash(ctx, tx)
+	previousHash, err := latestHash(ctx, tx)
 	if err != nil {
 		return Record{}, err
 	}
@@ -66,13 +80,10 @@ func (r *sqlRepository) Append(ctx context.Context, record Record) (Record, erro
 	if _, err := tx.ExecContext(ctx, `UPDATE audit_records SET hash = ? WHERE id = ?`, record.Hash, id); err != nil {
 		return Record{}, fmt.Errorf("seal audit record hash: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
-		return Record{}, fmt.Errorf("commit audit tx: %w", err)
-	}
 	return record, nil
 }
 
-func (r *sqlRepository) latestHash(ctx context.Context, q interface {
+func latestHash(ctx context.Context, q interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }) (string, error) {
 	var hash string

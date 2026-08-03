@@ -246,3 +246,51 @@ func TestNewSharedClientRedactsInClusterServiceAccountPaths(t *testing.T) {
 		t.Fatalf("combined error must preserve in-cluster chain: %v", err)
 	}
 }
+
+type failingRuntimeKubeconfigFile struct {
+	path     string
+	failAt   string
+	sentinel error
+}
+
+func (f *failingRuntimeKubeconfigFile) Name() string { return f.path }
+func (f *failingRuntimeKubeconfigFile) Chmod(os.FileMode) error {
+	if f.failAt == "chmod" {
+		return fmt.Errorf("chmod %s: %w", f.path, f.sentinel)
+	}
+	return nil
+}
+func (f *failingRuntimeKubeconfigFile) Write([]byte) (int, error) {
+	if f.failAt == "write" {
+		return 0, fmt.Errorf("write %s: %w", f.path, f.sentinel)
+	}
+	return 1, nil
+}
+func (f *failingRuntimeKubeconfigFile) Close() error {
+	if f.failAt == "close" {
+		return fmt.Errorf("close %s: %w", f.path, f.sentinel)
+	}
+	return nil
+}
+
+func TestRuntimeKubeconfigFileErrorsRedactPathAndPreserveChain(t *testing.T) {
+	for _, failAt := range []string{"chmod", "write", "close"} {
+		t.Run(failAt, func(t *testing.T) {
+			sentinel := errors.New(failAt + " sentinel")
+			path := filepath.Join(t.TempDir(), "sensitive-kubeconfig")
+			file := &failingRuntimeKubeconfigFile{path: path, failAt: failAt, sentinel: sentinel}
+			_, err := writeRuntimeKubeconfigFile([]byte("config"), func(string, string) (runtimeKubeconfigFile, error) {
+				return file, nil
+			}, t.TempDir())
+			if err == nil {
+				t.Fatalf("expected %s failure", failAt)
+			}
+			if strings.Contains(err.Error(), path) {
+				t.Fatalf("error must redact runtime kubeconfig path: %q", err)
+			}
+			if !errors.Is(err, sentinel) {
+				t.Fatalf("error must preserve %s chain: %v", failAt, err)
+			}
+		})
+	}
+}

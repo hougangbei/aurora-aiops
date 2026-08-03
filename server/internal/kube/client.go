@@ -133,8 +133,24 @@ func writeInClusterKubeconfig(config *rest.Config) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("encode runtime kubeconfig: %w", err)
 	}
+	return writeRuntimeKubeconfigFile(content, func(dir, pattern string) (runtimeKubeconfigFile, error) {
+		return os.CreateTemp(dir, pattern)
+	}, runtimeDir)
+}
 
-	file, err := os.CreateTemp(runtimeDir, "kubejojo-kubeconfig-*")
+type runtimeKubeconfigFile interface {
+	Name() string
+	Chmod(mode os.FileMode) error
+	Write(p []byte) (int, error)
+	Close() error
+}
+
+func writeRuntimeKubeconfigFile(
+	content []byte,
+	createTemp func(dir, pattern string) (runtimeKubeconfigFile, error),
+	runtimeDir string,
+) (string, error) {
+	file, err := createTemp(runtimeDir, "kubejojo-kubeconfig-*")
 	if err != nil {
 		return "", fmt.Errorf("create runtime kubeconfig: %w", redactConfigPath(err, runtimeDir))
 	}
@@ -147,13 +163,13 @@ func writeInClusterKubeconfig(config *rest.Config) (string, error) {
 		}
 	}()
 	if err := file.Chmod(0o600); err != nil {
-		return "", fmt.Errorf("secure runtime kubeconfig: %w", err)
+		return "", fmt.Errorf("secure runtime kubeconfig: %w", redactConfigPath(err, path))
 	}
 	if _, err := file.Write(content); err != nil {
-		return "", fmt.Errorf("write runtime kubeconfig: %w", err)
+		return "", fmt.Errorf("write runtime kubeconfig: %w", redactConfigPath(err, path))
 	}
 	if err := file.Close(); err != nil {
-		return "", fmt.Errorf("close runtime kubeconfig: %w", err)
+		return "", fmt.Errorf("close runtime kubeconfig: %w", redactConfigPath(err, path))
 	}
 	keep = true
 	return path, nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -32,7 +33,7 @@ import (
 // newPlatformRBACRouter builds the full production router with platform auth,
 // the EnforcePlatformRBAC middleware, and every /api/v1 route registered, so the
 // role matrix and route-inventory tests exercise real route registrations.
-func newPlatformRBACRouter(t *testing.T) (*gin.Engine, *auth.Service) {
+func newPlatformRBACRouter(t *testing.T) (*gin.Engine, *auth.Service, string) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
@@ -47,6 +48,17 @@ func newPlatformRBACRouter(t *testing.T) (*gin.Engine, *auth.Service) {
 	seedUser(t, authRepo, "u-admin", "admin", "correct-password", auth.RoleAdmin)
 	seedUser(t, authRepo, "u-operator", "operator", "correct-password", auth.RoleOperator)
 	seedUser(t, authRepo, "u-viewer", "viewer", "correct-password", auth.RoleViewer)
+
+	// A fake kubectl makes privileged Secret reads observable without requiring
+	// a live cluster. Unauthorized requests must never create the marker file.
+	kubectlDir := t.TempDir()
+	secretReadMarker := filepath.Join(t.TempDir(), "secret-read")
+	t.Setenv("KUBEJOJO_TEST_SECRET_READ_MARKER", secretReadMarker)
+	t.Setenv("PATH", kubectlDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	fakeKubectl := []byte("#!/bin/sh\n: > \"$KUBEJOJO_TEST_SECRET_READ_MARKER\"\nprintf 'apiVersion: v1\\nkind: Secret\\nmetadata:\\n  name: app\\n  namespace: default\\ndata:\\n  token: cmVkYWN0ZWQ=\\n'\n")
+	if err := os.WriteFile(filepath.Join(kubectlDir, "kubectl"), fakeKubectl, 0o700); err != nil {
+		t.Fatalf("write fake kubectl: %v", err)
+	}
 
 	aiopsRepo := aiops.NewRepository(db)
 	aiopsService := aiops.NewService(aiopsRepo)
@@ -68,6 +80,7 @@ func newPlatformRBACRouter(t *testing.T) (*gin.Engine, *auth.Service) {
 		Kubernetes: kubeClient,
 		Metrics:    metricsfake.NewSimpleClientset(),
 		RESTConfig: &rest.Config{},
+		ConfigPath: filepath.Join(t.TempDir(), "runtime-kubeconfig"),
 	})
 
 	auditRepo := audit.NewRepository(db)
@@ -99,7 +112,7 @@ func newPlatformRBACRouter(t *testing.T) (*gin.Engine, *auth.Service) {
 		experiment.NewRunRepository(db),
 		buildinfo.Info{},
 	)
-	return router, authService
+	return router, authService, secretReadMarker
 }
 
 func rbacCookie(t *testing.T, router *gin.Engine, username string) *http.Cookie {
@@ -128,7 +141,7 @@ func doRequest(t *testing.T, router *gin.Engine, method, path, body, cookieUser 
 const validExperimentRunBody = `{"id":"r1","group":"rules","seed":1,"scenario":"dns","expectedRootCause":"dns","top1Correct":true,"top3Contains":true,"mttdSeconds":1.0,"evidenceCompleteness":1.0,"highRiskIntercepted":true,"tokensUsed":100}`
 
 func TestPlatformRBACRoleMatrix(t *testing.T) {
-	router, _ := newPlatformRBACRouter(t)
+	router, _, _ := newPlatformRBACRouter(t)
 
 	cases := []struct {
 		name     string
@@ -153,6 +166,26 @@ func TestPlatformRBACRoleMatrix(t *testing.T) {
 				t.Fatalf("status=%d want=%d body=%s", rec.Code, tt.wantCode, rec.Body.String())
 			}
 		})
+	}
+}
+
+func TestViewerSecretYAMLDoesNotInvokeKubectl(t *testing.T) {
+	router, _, marker := newPlatformRBACRouter(t)
+
+	viewer := doRequest(t, router, http.MethodGet, "/api/v1/secrets/default/app/yaml", "", "viewer")
+	if viewer.Code != http.StatusForbidden {
+		t.Fatalf("viewer status=%d want 403 body=%s", viewer.Code, viewer.Body.String())
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("viewer request must not invoke kubectl; marker stat error=%v", err)
+	}
+
+	admin := doRequest(t, router, http.MethodGet, "/api/v1/secrets/default/app/yaml", "", "admin")
+	if admin.Code != http.StatusOK {
+		t.Fatalf("admin status=%d want 200 body=%s", admin.Code, admin.Body.String())
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("admin request must reach Secret YAML handler: %v", err)
 	}
 }
 
@@ -228,7 +261,7 @@ func TestEnforcePlatformRBACDefaultAdmin(t *testing.T) {
 }
 
 func TestPlatformRBACClassifiesEveryRegisteredRoute(t *testing.T) {
-	router, _ := newPlatformRBACRouter(t)
+	router, _, _ := newPlatformRBACRouter(t)
 
 	const (
 		login  = "/api/v1/auth/login"

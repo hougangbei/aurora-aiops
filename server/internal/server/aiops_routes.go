@@ -332,7 +332,7 @@ func handleRemediationDecision(c *gin.Context, svc *aiops.Service, remediationSe
 	}
 	reason, valid := normalizeRemediationReason(req.Reason)
 	if !valid {
-		c.JSON(http.StatusBadRequest, response.Failure("INVALID_REMEDIATION_REQUEST", "审批理由至少需要 8 个字符"))
+		c.JSON(http.StatusBadRequest, response.Failure("INVALID_REMEDIATION_REQUEST", "处置理由至少需要 8 个字符"))
 		return
 	}
 	var err error

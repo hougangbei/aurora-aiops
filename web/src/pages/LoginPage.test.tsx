@@ -49,7 +49,9 @@ describe('LoginPage', () => {
 
   it('renders the neural access structure with labelled Signal Capsule fields', () => {
     renderLoginPage();
-    expect(screen.getByRole('heading', { name: /AURORA\s*ACCESS/i })).toBeVisible();
+    expect(
+      screen.getByRole('heading', { name: /AURORA\s*AIOPS\s*ACCESS\s*CONTROL/i }),
+    ).toBeVisible();
     expect(screen.getByText('SYSTEM NODE: AURORA-CORE')).toBeVisible();
     expect(screen.getByLabelText('用户身份 / User Identity')).toBeVisible();
     expect(screen.getByLabelText('序列密钥 / Sequence Key')).toBeVisible();

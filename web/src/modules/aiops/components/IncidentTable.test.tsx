@@ -47,8 +47,8 @@ describe('IncidentTable', () => {
 
   it('shows loading while fetching', () => {
     listIncidentsMock.mockReturnValue(new Promise(() => {}));
-    const { container } = renderTable();
-    expect(container.querySelector('.ant-spin-spinning')).toBeTruthy();
+    renderTable();
+    expect(screen.getByRole('status')).toBeVisible();
   });
 
   it('shows the empty message when there are no incidents', async () => {

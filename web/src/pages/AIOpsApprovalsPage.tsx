@@ -9,6 +9,7 @@ import { listIncidents } from '../modules/aiops/api';
 import { demoIncidents } from '../modules/aiops/demo';
 import { useAppStore } from '../stores/appStore';
 import type { Incident } from '../modules/aiops/types';
+import { CoreSpinLoader } from '../components/ui/core-spin-loader';
 
 export function AIOpsApprovalsPage() {
   const dataMode = useAppStore((state) => state.dataMode);
@@ -54,14 +55,18 @@ export function AIOpsApprovalsPage() {
         <Alert type="error" showIcon message="加载待审批列表失败" description={String(approvalsQuery.error)} />
       ) : null}
 
-      <Table<Incident>
-        rowKey="id"
-        columns={columns}
-        dataSource={incidents}
-        loading={dataMode === 'live' && approvalsQuery.isLoading}
-        pagination={false}
-        locale={{ emptyText: '暂无待审批任务' }}
-      />
+      {dataMode === 'live' && approvalsQuery.isLoading ? (
+        <CoreSpinLoader minHeight="220px" />
+      ) : (
+        <Table<Incident>
+          rowKey="id"
+          columns={columns}
+          dataSource={incidents}
+          loading={false}
+          pagination={false}
+          locale={{ emptyText: '暂无待审批任务' }}
+        />
+      )}
 
       <ApprovalDialog incidentId={activeId ?? ''} open={Boolean(activeId)} onClose={() => setActiveId(undefined)} />
     </section>

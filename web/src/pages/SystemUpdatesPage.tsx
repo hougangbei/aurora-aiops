@@ -24,6 +24,7 @@ import {
   type UpdateStatus,
 } from '../services/system';
 import { useAppStore } from '../stores/appStore';
+import { CoreSpinLoader } from '../components/ui/core-spin-loader';
 
 type PanelProps = {
   title: string;
@@ -413,9 +414,7 @@ export function SystemUpdatesPage() {
   return (
     <div className="space-y-5">
       {loading ? (
-        <section className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
-          <Skeleton active paragraph={{ rows: 8 }} />
-        </section>
+        <CoreSpinLoader minHeight="320px" />
       ) : (
         <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr] xl:items-start">
           <Panel

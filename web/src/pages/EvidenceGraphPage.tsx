@@ -7,6 +7,7 @@ import { EvidenceGraph } from '../modules/aiops/components/EvidenceGraph';
 import { getEvidence } from '../modules/aiops/api';
 import { COLLAPSE_THRESHOLD, buildEvidenceLayout, type EvidenceFlowResult } from '../modules/aiops/evidenceLayout';
 import { useAppStore } from '../stores/appStore';
+import { CoreSpinLoader } from '../components/ui/core-spin-loader';
 
 const emptyFlow: EvidenceFlowResult = { nodes: [], edges: [], truncated: false, collapsed: {} };
 
@@ -56,9 +57,7 @@ export function EvidenceGraphPage() {
       {dataMode === 'demo' ? (
         <Alert type="info" showIcon message="演示模式不展示证据图。" />
       ) : evidenceQuery.isLoading ? (
-        <div className="flex justify-center py-20">
-          <Spin size="large" />
-        </div>
+        <CoreSpinLoader minHeight="320px" />
       ) : (
         <>
           {flow.truncated && !showAll ? (

@@ -4,6 +4,7 @@ import { Alert, Card, Col, Row, Statistic, Typography } from 'antd';
 import { listIncidents } from '../modules/aiops/api';
 import { demoIncidents } from '../modules/aiops/demo';
 import { useAppStore } from '../stores/appStore';
+import { CoreSpinLoader } from '../components/ui/core-spin-loader';
 
 const terminalStatuses = new Set(['resolved', 'rejected', 'failed']);
 
@@ -48,6 +49,9 @@ export function AIOpsOverviewPage() {
         <Alert type="error" showIcon message="加载诊断任务失败" description={String(incidentsQuery.error)} />
       ) : null}
 
+      {dataMode === 'live' && incidentsQuery.isLoading ? (
+        <CoreSpinLoader minHeight="220px" />
+      ) : (
       <Row gutter={[16, 16]}>
         <Col xs={12} md={8} xl={4}>
           <Card bordered={false} className="rounded-2xl bg-slate-50">
@@ -78,6 +82,7 @@ export function AIOpsOverviewPage() {
           </Card>
         </Col>
       </Row>
+      )}
     </section>
   );
 }

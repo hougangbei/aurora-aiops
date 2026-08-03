@@ -6,6 +6,7 @@ import { useMemo } from 'react';
 import { getExperimentMetrics } from '../modules/aiops/api';
 import { useAppStore } from '../stores/appStore';
 import type { ExperimentMetrics } from '../modules/aiops/types';
+import { CoreSpinLoader } from '../components/ui/core-spin-loader';
 
 const groupLabel: Record<string, string> = {
   rules: '规则基线',
@@ -86,12 +87,14 @@ export function AIOpsExperimentsPage() {
 
       {dataMode === 'demo' ? (
         <Alert type="info" showIcon message="演示模式展示实验指标结构，实际数据来自真实实验运行。" />
+      ) : metricsQuery.isLoading ? (
+        <CoreSpinLoader minHeight="220px" />
       ) : (
         <Table<ExperimentMetrics>
           rowKey="group"
           columns={columns}
           dataSource={metrics}
-          loading={metricsQuery.isLoading}
+          loading={false}
           pagination={false}
           locale={{ emptyText: '暂无实验数据' }}
         />

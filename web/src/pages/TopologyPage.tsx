@@ -76,6 +76,7 @@ import {
   type TopologyResource,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
+import { CoreSpinLoader } from '../components/ui/core-spin-loader';
 
 import '@xyflow/react/dist/base.css';
 
@@ -1006,9 +1007,7 @@ function TopologyWorkspace() {
           </div>
 
           {topologyQuery.isLoading ? (
-            <div className="p-5 pt-20">
-              <Skeleton active paragraph={{ rows: 12 }} />
-            </div>
+            <CoreSpinLoader minHeight="320px" />
           ) : graph.resources.length === 0 ? (
             <div className="flex h-full items-center justify-center">
               <Empty

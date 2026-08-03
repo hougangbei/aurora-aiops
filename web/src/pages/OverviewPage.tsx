@@ -35,6 +35,7 @@ import {
   getOverviewWarnings,
 } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
+import { CoreSpinLoader } from '../components/ui/core-spin-loader';
 
 const demoSummary: OverviewSummary = {
   kubernetesVersion: 'v1.35.3',
@@ -342,7 +343,7 @@ export function OverviewPage() {
   });
 
   if (enabled && summaryQuery.isLoading && nodesQuery.isLoading) {
-    return <Skeleton active paragraph={{ rows: 12 }} />;
+    return <CoreSpinLoader minHeight="320px" />;
   }
 
   const summary = enabled && summaryQuery.data ? summaryQuery.data : demoSummary;

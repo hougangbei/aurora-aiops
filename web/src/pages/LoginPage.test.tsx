@@ -47,6 +47,15 @@ describe('LoginPage', () => {
     localStorage.clear();
   });
 
+  it('renders the neural access structure with labelled Signal Capsule fields', () => {
+    renderLoginPage();
+    expect(screen.getByRole('heading', { name: /AURORA ACCESS/i })).toBeVisible();
+    expect(screen.getByText('SYSTEM NODE: AURORA-CORE')).toBeVisible();
+    expect(screen.getByLabelText('用户身份 / User Identity')).toBeVisible();
+    expect(screen.getByLabelText('序列密钥 / Sequence Key')).toBeVisible();
+    expect(screen.getByRole('button', { name: /INITIALIZE SESSION/i })).toBeVisible();
+  });
+
   it('submits username and password to the platform login endpoint', async () => {
     vi.mocked(loginWithPassword).mockResolvedValue({
       id: 'u-admin',

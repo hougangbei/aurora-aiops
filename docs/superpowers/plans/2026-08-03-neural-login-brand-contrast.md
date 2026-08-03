@@ -15,7 +15,7 @@
 **Files:**
 - Modify: `web/src/pages/LoginPage.test.tsx`
 
-- [ ] **Step 1: Replace the title assertion**
+- [x] **Step 1: Replace the title assertion**
 
 Update the neural access structure test to require both visible heading lines:
 
@@ -25,13 +25,13 @@ expect(screen.getByRole('heading', { name: /AURORA AIOPS ACCESS CONTROL/i })).to
 
 Keep the existing node label, bilingual field labels, and primary button assertions unchanged.
 
-- [ ] **Step 2: Run the targeted test and confirm the expected red result**
+- [x] **Step 2: Run the targeted test and confirm the expected red result**
 
 Run: `cd web && npm test -- --run src/pages/LoginPage.test.tsx`
 
 Expected: the structure test fails because the current heading still contains `AURORA ACCESS`.
 
-- [ ] **Step 3: Commit the test baseline**
+- [x] **Step 3: Commit the test baseline**
 
 ```bash
 git add web/src/pages/LoginPage.test.tsx
@@ -44,7 +44,7 @@ git commit -m "test(web): require Aurora AIOps login branding"
 - Modify: `web/src/pages/LoginPage.tsx:75-100`
 - Modify: `web/src/pages/LoginPage.css:1-290`
 
-- [ ] **Step 1: Update the heading and subtitle copy**
+- [x] **Step 1: Update the heading and subtitle copy**
 
 Use the following structure while preserving the existing `login-title` id:
 
@@ -61,7 +61,7 @@ Use the following structure while preserving the existing `login-title` id:
 </p>
 ```
 
-- [ ] **Step 2: Increase contrast in the scoped login styles**
+- [x] **Step 2: Increase contrast in the scoped login styles**
 
 Update the existing selectors without changing layout behavior:
 
@@ -90,13 +90,13 @@ Update the existing selectors without changing layout behavior:
 
 Also raise the field label, field mark, password icon, and focused border colors consistently with these tokens. Keep the reduced-motion block limited to color/border transitions.
 
-- [ ] **Step 3: Run targeted tests and build**
+- [x] **Step 3: Run targeted tests and build**
 
 Run: `cd web && npm test -- --run src/pages/LoginPage.test.tsx && npm run build`
 
 Expected: 5 LoginPage tests pass and the Vite build succeeds with only the existing chunk-size warning.
 
-- [ ] **Step 4: Commit the implementation**
+- [x] **Step 4: Commit the implementation**
 
 ```bash
 git add web/src/pages/LoginPage.tsx web/src/pages/LoginPage.css
@@ -110,13 +110,13 @@ git commit -m "feat(web): strengthen Aurora Aiops login branding"
 - Verify: `web/src/pages/LoginPage.css`
 - Verify: `web/src/pages/LoginPage.test.tsx`
 
-- [ ] **Step 1: Run the full test suite and diff checks**
+- [x] **Step 1: Run the full test suite and diff checks**
 
 Run: `cd web && npm test && npm run build`; then run `git diff --check` from the repository root.
 
 Expected: 13 test files / 52 tests pass, build succeeds, and diff check is clean.
 
-- [ ] **Step 2: Check the live login page**
+- [x] **Step 2: Check the live login page**
 
 Open `/login` from the current worktree and verify:
 
@@ -126,6 +126,6 @@ Open `/login` from the current worktree and verify:
 - 390px width keeps fields within the viewport;
 - mouse glow, keyboard focus, and reduced-motion CSS behavior remain present.
 
-- [ ] **Step 3: Commit only if verification required a fix**
+- [x] **Step 3: Commit only if verification required a fix**
 
 If verification finds a defect, patch the smallest scoped selector or copy change, rerun the checks above, and commit it with a message describing the fix. Otherwise leave the verification task without an empty commit.

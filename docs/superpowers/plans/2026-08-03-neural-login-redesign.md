@@ -33,7 +33,7 @@ it('renders the neural access structure with labelled Signal Capsule fields', ()
 
 - [ ] **Step 2: 运行并确认失败**
 
-Run: `cd web && npm test -- --run src/pages/LoginPage.test.tsx`  
+Run: `cd web && npm test -- --run src/pages/LoginPage.test.tsx`
 Expected: 新结构测试因旧页面没有节点标题和双语 label 而失败，既有登录、token、cookie、演示测试仍通过。
 
 - [ ] **Step 3: 提交测试基线**
@@ -105,7 +105,7 @@ const handlePointerLeave = () => {
 
 - [ ] **Step 3: 运行登录测试**
 
-Run: `cd web && npm test -- --run src/pages/LoginPage.test.tsx`  
+Run: `cd web && npm test -- --run src/pages/LoginPage.test.tsx`
 Expected: 所有登录页测试通过，`getByLabelText` 命中真实输入框，密码可见性按钮不会替代密码输入框。
 
 - [ ] **Step 4: 提交页面实现**
@@ -124,7 +124,7 @@ git commit -m "feat(web): redesign login as neural access surface"
 
 - [ ] **Step 1: 浏览器检查桌面与移动布局**
 
-Run: `cd web && npm run dev -- --host 127.0.0.1`  
+Run: `cd web && npm run dev -- --host 127.0.0.1`
 检查 `/login` 首屏、鼠标光源跟随/离开回中、Signal Capsule 聚焦态、按钮胶囊过渡、键盘焦点、触摸设备和移动宽度不溢出。
 
 - [ ] **Step 2: 检查减少动态效果**

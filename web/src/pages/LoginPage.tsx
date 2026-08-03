@@ -89,12 +89,12 @@ export function LoginPage() {
               A
             </div>
             <h1 className="login-title" id="login-title">
-              AURORA
+              AURORA AIOPS
               <br />
-              ACCESS
+              ACCESS CONTROL
             </h1>
             <p className="login-subtitle">
-              面向单集群 Kubernetes 运维场景的安全访问入口。
+              Aurora AIOps 智能运维平台安全访问入口。
               <br />
               Authenticate to continue into the Aurora control plane.
             </p>

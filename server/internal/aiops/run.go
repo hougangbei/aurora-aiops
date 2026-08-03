@@ -145,9 +145,12 @@ func (r *sqlRunRepository) updateRun(ctx context.Context, execer runExecer, run 
 }
 
 func (r *sqlRunRepository) ListRuns(ctx context.Context, incidentID string) ([]AgentRun, error) {
+	// Order by insertion rowid: started_at is RFC3339Nano text whose lexical
+	// order is not monotonic (trailing zeros are stripped), so a timestamp sort
+	// can reorder runs that were created sequentially.
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT id, incident_id, role, attempt, status, summary, output, model, prompt_tokens, completion_tokens, total_tokens, error, started_at, completed_at
-		FROM agent_runs WHERE incident_id = ? ORDER BY started_at ASC, role ASC`, incidentID)
+		FROM agent_runs WHERE incident_id = ? ORDER BY rowid ASC`, incidentID)
 	if err != nil {
 		return nil, fmt.Errorf("query agent runs: %w", err)
 	}

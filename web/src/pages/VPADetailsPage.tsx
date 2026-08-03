@@ -5,6 +5,8 @@ import { Alert, Button, Empty, Space, Tabs, Tag, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
+import { CoreSpinLoader } from '../components/ui/core-spin-loader';
+
 import { buildHPARoute, hpaStatusColor, listHPAs, type HPAItem } from '../components/hpa/hpaShared';
 import { PodTextViewer } from '../components/pod/podShared';
 import {
@@ -251,13 +253,7 @@ export function VPADetailsPage() {
   const yamlResult: ResourceTextResult | undefined = vpaYamlQuery.data;
 
   if (allowLiveAccess && vpasQuery.isLoading) {
-    return (
-      <section className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_12px_36px_rgba(15,23,42,0.05)]">
-        <Typography.Paragraph className="!mb-0 text-sm text-slate-500">
-          正在加载 VPA 详情...
-        </Typography.Paragraph>
-      </section>
-    );
+    return <CoreSpinLoader minHeight="320px" />;
   }
 
   if (!vpaItem) {

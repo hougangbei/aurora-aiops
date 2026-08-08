@@ -4,7 +4,7 @@ import { ModelSettingsForm } from '../modules/aiops/components/ModelSettingsForm
 
 export function AIOpsSettingsPage() {
   return (
-    <section className="space-y-4 rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_12px_36px_rgba(15,23,42,0.05)]">
+    <section className="aurora-panel space-y-4 rounded-[24px] border p-6">
       <div>
         <Typography.Title level={2} className="!mb-1">
           模型设置

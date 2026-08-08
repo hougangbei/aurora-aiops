@@ -40,7 +40,10 @@ const metricToneClasses: Record<MetricTone, string> = {
 
 function ResourceMetricCard({ label, value, hint, tone = 'teal' }: ResourceMetric) {
   return (
-    <section className="rounded-[20px] border border-slate-200 bg-white px-4 py-3.5 shadow-[0_8px_22px_rgba(15,23,42,0.05)]">
+    <section
+      className="aurora-metric-card rounded-[20px] border px-4 py-3.5"
+      data-aurora-surface="metric"
+    >
       <div className="flex items-start gap-3">
         <div
           className={[
@@ -96,7 +99,10 @@ export function ResourceListPage<T extends object>({
         </section>
       ) : null}
 
-      <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_12px_36px_rgba(15,23,42,0.05)]">
+      <section
+        className="aurora-panel rounded-[24px] border p-5"
+        data-aurora-surface="panel"
+      >
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
             <Typography.Title level={4} className="!mb-1">

@@ -12,7 +12,7 @@ export function SectionCard({
   children: ReactNode;
 }) {
   return (
-    <section className="space-y-3 rounded-[18px] border border-slate-200 bg-slate-50 px-4 py-4">
+    <section className="aurora-panel-muted space-y-3 rounded-[18px] border px-4 py-4">
       <div className="flex items-center justify-between gap-3">
         <Typography.Title level={4} className="!mb-0 !text-[16px]">
           {title}
@@ -32,7 +32,7 @@ export function InlineStat({
   value: string;
 }) {
   return (
-    <div className="rounded-[14px] border border-slate-200 bg-white px-3 py-2.5">
+    <div className="aurora-panel-muted rounded-[14px] border px-3 py-2.5">
       <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400">
         {label}
       </div>
@@ -60,7 +60,7 @@ export function ContextRow({
 
 export function EmptyState({ message }: { message: string }) {
   return (
-    <div className="rounded-[16px] border border-dashed border-slate-300 bg-white px-4 py-8 text-sm text-slate-500">
+    <div className="aurora-panel-muted rounded-[16px] border border-dashed px-4 py-8 text-sm text-slate-500">
       {message}
     </div>
   );
@@ -123,7 +123,7 @@ export function SearchableKeyList({
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-[16px] border border-slate-200 bg-white">
+      <div className="aurora-panel-muted overflow-hidden rounded-[16px] border">
         {filteredItems.length > 0 ? (
           <div className="max-h-[320px] divide-y divide-slate-100 overflow-auto">
             {filteredItems.map((item) => (

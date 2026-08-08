@@ -11,7 +11,7 @@ export function IncidentsPage() {
   const [createOpen, setCreateOpen] = useState(false);
 
   return (
-    <section className="space-y-4 rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_12px_36px_rgba(15,23,42,0.05)]">
+    <section className="aurora-panel space-y-4 rounded-[24px] border p-6">
       <div className="flex items-center justify-between gap-4">
         <div>
           <Typography.Title level={2} className="!mb-1">

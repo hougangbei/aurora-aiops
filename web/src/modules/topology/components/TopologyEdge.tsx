@@ -25,25 +25,25 @@ function edgeStyle(viewState: TopologyViewState | undefined) {
   switch (viewState) {
     case 'focused':
       return {
-        stroke: '#475569',
+        stroke: '#b8c4ff',
         strokeWidth: 1.8,
         opacity: 0.96,
       };
     case 'context':
       return {
-        stroke: '#94a3b8',
+        stroke: '#8093d8',
         strokeWidth: 1.45,
         opacity: 0.6,
       };
     case 'muted':
       return {
-        stroke: '#cbd5e1',
+        stroke: '#53628f',
         strokeWidth: 1.1,
         opacity: 0.16,
       };
     default:
       return {
-        stroke: '#94a3b8',
+        stroke: '#7183bd',
         strokeWidth: 1.35,
         opacity: 0.9,
       };

@@ -141,7 +141,7 @@ function Panel({
   return (
     <section
       className={[
-        'rounded-[20px] border border-slate-200 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.05)]',
+        'aurora-panel rounded-[20px] border p-4',
         className ?? '',
       ].join(' ')}
     >
@@ -170,7 +170,7 @@ function SummaryCard({
   accentClass: string;
 }) {
   return (
-    <section className="rounded-[20px] border border-slate-200 bg-white px-4 py-3.5 shadow-[0_8px_22px_rgba(15,23,42,0.05)]">
+    <section className="aurora-metric-card rounded-[20px] border px-4 py-3.5">
       <div className="flex items-start gap-3">
         <div
           className={[
@@ -204,7 +204,7 @@ function CompactMetricCard({
   extra?: string;
 }) {
   return (
-    <section className="rounded-[18px] border border-slate-200 bg-white px-4 py-3 shadow-[0_8px_22px_rgba(15,23,42,0.05)]">
+    <section className="aurora-metric-card rounded-[18px] border px-4 py-3">
       <div className="text-xs font-medium uppercase tracking-[0.08em] text-slate-400">{title}</div>
       <div className="mt-2 flex items-end gap-2">
         <div className="text-[1.75rem] font-semibold leading-none tracking-[-0.03em] text-slate-950">
@@ -426,7 +426,7 @@ export function OverviewPage() {
         ))}
       </section>
 
-      <section className="rounded-[20px] border border-slate-200 bg-white px-4 py-3 shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
+      <section className="aurora-panel rounded-[20px] border px-4 py-3">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-3">
             <Tag color={statusColor(summary.clusterStatus)}>{summary.clusterStatus}</Tag>
@@ -434,10 +434,10 @@ export function OverviewPage() {
             <Tag color={summary.metricsAvailable ? 'cyan' : 'default'}>
               {summary.metricsAvailable ? 'Metrics Ready' : 'Metrics Unavailable'}
             </Tag>
-            <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm text-slate-700">
+            <div className="aurora-chip rounded-full border px-3 py-1 text-sm">
               Namespace: <span className="font-semibold text-slate-950">{namespace}</span>
             </div>
-            <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-sm text-slate-700">
+            <div className="aurora-chip rounded-full border px-3 py-1 text-sm">
               模式: <span className="font-semibold text-slate-950">{dataMode === 'live' ? 'Real Cluster' : 'Demo'}</span>
             </div>
           </div>
@@ -463,7 +463,7 @@ export function OverviewPage() {
                 return (
                   <section
                     key={item.namespace}
-                    className="rounded-[16px] border border-slate-200 bg-slate-50 px-3 py-2.5"
+                    className="aurora-panel-muted rounded-[16px] border px-3 py-2.5"
                   >
                     <div className="mb-1.5 flex items-center justify-between gap-4">
                       <div className="min-w-0">
@@ -481,8 +481,8 @@ export function OverviewPage() {
                       percent={percent}
                       size="small"
                       showInfo={false}
-                      strokeColor="#0f766e"
-                      trailColor="#dbe7ec"
+                      strokeColor="#718dff"
+                      trailColor="rgba(178, 194, 255, 0.14)"
                     />
                   </section>
                 );
@@ -517,18 +517,18 @@ export function OverviewPage() {
                   label: 'CPU Usage',
                   value: summary.cpuUsage ?? '0%',
                   percent: parsePercent(summary.cpuUsage),
-                  strokeColor: '#0f766e',
+                  strokeColor: '#718dff',
                 },
                 {
                   label: 'Memory Usage',
                   value: summary.memoryUsage ?? '0%',
                   percent: parsePercent(summary.memoryUsage),
-                  strokeColor: '#2563eb',
+                  strokeColor: '#a69bff',
                 },
               ].map((item) => (
                 <section
                   key={item.label}
-                  className="rounded-[16px] border border-slate-200 bg-slate-50 px-3 py-3"
+                  className="aurora-panel-muted rounded-[16px] border px-3 py-3"
                 >
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <Typography.Text strong className="!text-sm">
@@ -539,7 +539,7 @@ export function OverviewPage() {
                   <Progress
                     percent={item.percent}
                     strokeColor={item.strokeColor}
-                    trailColor="#dbe7ec"
+                    trailColor="rgba(178, 194, 255, 0.14)"
                   />
                 </section>
               ))}
@@ -559,7 +559,7 @@ export function OverviewPage() {
               {recentWarnings.map((item) => (
                 <section
                   key={`${item.namespace}-${item.kind}-${item.name}-${item.reason}`}
-                  className="rounded-[16px] border border-slate-200 bg-slate-50 px-3 py-2.5"
+                  className="aurora-panel-muted rounded-[16px] border px-3 py-2.5"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -611,10 +611,10 @@ export function OverviewPage() {
             ].map((item) => (
               <section
                 key={item.label}
-                className="rounded-[16px] border border-slate-200 bg-slate-50 px-3 py-2.5"
+                className="aurora-panel-muted rounded-[16px] border px-3 py-2.5"
               >
                 <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-600 shadow-[inset_0_0_0_1px_rgba(226,232,240,1)]">
+                  <div className="aurora-icon-tile flex h-9 w-9 items-center justify-center rounded-xl">
                     {item.icon}
                   </div>
                   <div>

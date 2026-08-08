@@ -28,13 +28,13 @@ function NavigationPanel({
   onToggleSection,
 }: NavigationPanelProps) {
   return (
-    <div className="flex h-full flex-col bg-white">
-      <div className="border-b border-slate-200 px-5 py-5">
+    <div className="aurora-navigation flex h-full flex-col">
+      <div className="aurora-navigation__brand border-b px-5 py-5">
         <div className="flex items-center gap-3">
           <BrandLogo size={42} />
           <div className="min-w-0 flex-1">
             <div className="flex flex-col">
-              <span className="text-lg font-bold text-gray-900">AIOps 平台</span>
+              <span className="aurora-navigation__title text-lg font-bold">Aurora AIOps</span>
               <VersionBadge />
             </div>
           </div>
@@ -58,12 +58,18 @@ function NavigationPanel({
                   className={[
                     'flex w-full items-center rounded-lg px-3 py-2 text-left transition-[background-color,color,box-shadow] duration-250 ease-out',
                     sectionActive
-                      ? 'bg-slate-950 text-white shadow-[inset_0_0_0_1px_rgba(148,163,184,0.12),0_10px_24px_rgba(15,23,42,0.18)]'
-                      : 'text-slate-800 hover:bg-teal-50 hover:text-teal-700',
+                      ? 'aurora-nav-section--active'
+                      : 'aurora-nav-section--idle',
                   ].join(' ')}
                 >
                   <div className="flex min-w-0 items-center gap-3">
-                    <span className={sectionActive ? 'text-teal-300' : 'text-slate-500'}>
+                    <span
+                      className={
+                        sectionActive
+                          ? 'aurora-nav-section__icon--active'
+                          : 'aurora-nav-section__icon--idle'
+                      }
+                    >
                       {section.icon}
                     </span>
                     <div className="min-w-0">
@@ -99,8 +105,8 @@ function NavigationPanel({
                             className={[
                               'flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left transition-[background-color,color] duration-200 ease-out',
                               active
-                                ? 'bg-teal-50 text-slate-950 shadow-[inset_0_0_0_1px_rgba(13,148,136,0.10)]'
-                                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900',
+                                ? 'aurora-nav-item--active'
+                                : 'aurora-nav-item--idle',
                             ].join(' ')}
                           >
                             <div className="flex min-w-0 items-center gap-3">
@@ -108,8 +114,8 @@ function NavigationPanel({
                                 className={[
                                   'shrink-0 transition-all duration-200 ease-out',
                                   active
-                                    ? 'h-4 w-1 rounded-full bg-teal-600'
-                                    : 'h-1.5 w-1.5 rounded-full bg-slate-300',
+                                    ? 'aurora-nav-marker--active h-4 w-1 rounded-full'
+                                    : 'aurora-nav-marker--idle h-1.5 w-1.5 rounded-full',
                                 ].join(' ')}
                               />
                               <span
@@ -234,9 +240,9 @@ export function AppLayout({ children }: PropsWithChildren) {
   };
 
   return (
-    <div className="min-h-screen bg-transparent">
+    <div className="aurora-shell min-h-screen">
       {screens.lg ? (
-        <aside className="fixed inset-y-0 left-0 z-30 w-[256px] border-r border-slate-200 bg-white">
+        <aside className="aurora-sidebar fixed inset-y-0 left-0 z-30 w-[256px] border-r">
           <NavigationPanel
             currentPath={location.pathname}
             expandedSection={expandedSection}
@@ -263,14 +269,14 @@ export function AppLayout({ children }: PropsWithChildren) {
       )}
 
       <div className="min-h-screen lg:pl-[256px]">
-        <header className="sticky top-0 z-20 border-b border-white/60 bg-white/80 backdrop-blur-xl">
-          <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
-            <div className="flex min-w-0 items-center gap-3">
+        <header className="aurora-header sticky top-0 z-20 border-b backdrop-blur-xl">
+          <div className="mx-auto flex max-w-[1440px] flex-col items-stretch justify-between gap-3 px-4 py-3 sm:flex-row sm:items-center sm:gap-4 sm:px-6">
+            <div className="flex min-w-0 items-center gap-3 sm:w-auto">
               {!screens.lg ? (
                 <Button icon={<MenuOutlined />} onClick={() => setDrawerOpen(true)} />
               ) : null}
               <div className="min-w-0">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                <div className="aurora-eyebrow text-xs font-semibold uppercase tracking-[0.18em]">
                   {activeItem?.sectionLabel ?? 'kubejojo'}
                 </div>
                 <div className="mt-1 flex min-w-0 items-center gap-2">
@@ -281,12 +287,14 @@ export function AppLayout({ children }: PropsWithChildren) {
               </div>
             </div>
 
-            <Space size={10} wrap className="justify-end">
-              <Space size={8}>
-                <Typography.Text type="secondary">Namespace</Typography.Text>
+            <Space size={10} wrap className="w-full justify-between sm:w-auto sm:justify-end">
+              <Space size={8} className="min-w-0">
+                <Typography.Text type="secondary" className="hidden sm:inline">
+                  Namespace
+                </Typography.Text>
                 <Select
                   value={namespace}
-                  style={{ width: 180 }}
+                  style={{ width: screens.sm ? 180 : 132 }}
                   options={namespaceOptions.map((item) => ({ label: item, value: item }))}
                   onChange={setNamespace}
                 />
@@ -301,7 +309,7 @@ export function AppLayout({ children }: PropsWithChildren) {
           </div>
         </header>
 
-        <main className="mx-auto max-w-[1440px] px-4 py-5 sm:px-6">
+        <main className="aurora-main mx-auto max-w-[1440px] px-4 py-5 sm:px-6">
           <PageErrorBoundary resetKey={`${location.pathname}:${namespace}`}>
             {children}
           </PageErrorBoundary>

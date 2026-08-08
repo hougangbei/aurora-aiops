@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 
+import { AuroraThemeProvider } from '../app/AuroraThemeProvider';
 import { AppLayout } from '../layouts/AppLayout';
 import { navigationItems } from '../layouts/navigation';
 import { useAppStore } from '../stores/appStore';
@@ -81,8 +82,9 @@ function ProtectedRoutes() {
   }
 
   return (
-    <AppLayout>
-      <Routes>
+    <AuroraThemeProvider>
+      <AppLayout>
+        <Routes>
         <Route path="/cluster/overview" element={<OverviewPage />} />
         <Route path="/cluster/namespaces" element={<NamespacesPage />} />
         <Route path="/cluster/nodes" element={<NodesPage />} />
@@ -208,8 +210,9 @@ function ProtectedRoutes() {
         />
 
         <Route path="*" element={<Navigate to="/cluster/overview" replace />} />
-      </Routes>
-    </AppLayout>
+        </Routes>
+      </AppLayout>
+    </AuroraThemeProvider>
   );
 }
 

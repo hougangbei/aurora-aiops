@@ -92,7 +92,7 @@ export function IncidentDetailsPage() {
   }
 
   return (
-    <section className="space-y-4 rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_12px_36px_rgba(15,23,42,0.05)]">
+    <section className="aurora-panel space-y-4 rounded-[24px] border p-6">
       {incidentQuery.isError ? (
         <Alert type="error" showIcon message="加载失败" description={String(incidentQuery.error)} />
       ) : null}

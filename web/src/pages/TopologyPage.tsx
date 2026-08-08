@@ -906,7 +906,7 @@ function TopologyWorkspace() {
           showIcon
           message="资源全景图仅支持真实集群数据。请先使用 ServiceAccount Token 接入集群。"
         />
-        <section className="rounded-[24px] border border-slate-200 bg-white p-8 shadow-[0_12px_36px_rgba(15,23,42,0.05)]">
+        <section className="aurora-panel rounded-[24px] border p-8">
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
             description="当前为演示模式，不展示拓扑测试数据"
@@ -931,7 +931,7 @@ function TopologyWorkspace() {
         />
       ) : null}
 
-      <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_14px_40px_rgba(15,23,42,0.06)]">
+      <section className="aurora-panel overflow-hidden rounded-[28px] border">
         <div className="relative h-[calc(100vh-164px)] min-h-[700px]">
         <div className="absolute left-4 top-4 z-10 space-y-2">
           <FloatingPanel>
@@ -1046,7 +1046,7 @@ function TopologyWorkspace() {
                   onNodeDoubleClick={handleNodeDoubleClick}
                   proOptions={{ hideAttribution: true }}
                 >
-                  <Background color="#d8e0e7" gap={18} size={1} />
+                  <Background color="rgba(178, 194, 255, 0.24)" gap={18} size={1} />
                 </ReactFlow>
               </div>
 
@@ -1069,7 +1069,7 @@ function TopologyWorkspace() {
 
               {canvasReady && overlayMotionPreset ? (
                 <div className={['pointer-events-none absolute inset-0', getOverlayMotionClass(overlayMotionPreset)].join(' ')}>
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_34%,rgba(255,255,255,0.92),rgba(255,255,255,0.42)_42%,rgba(255,255,255,0.12)_68%,transparent_84%)]" />
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_34%,rgba(155,178,255,0.32),rgba(112,145,255,0.16)_42%,rgba(16,22,37,0.08)_68%,transparent_84%)]" />
                 </div>
               ) : null}
             </>

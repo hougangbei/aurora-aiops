@@ -119,7 +119,7 @@ function normalizeReleaseBody(value?: string) {
 
 function Panel({ title, description, extra, children }: PanelProps) {
   return (
-    <section className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.05)]">
+    <section className="aurora-panel rounded-[20px] border p-5">
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
           <Typography.Title level={4} className="!mb-1">

@@ -35,7 +35,7 @@ export function AIOpsOverviewPage() {
   const failed24h = last24h.filter((item) => item.status === 'failed').length;
 
   return (
-    <section className="space-y-4 rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_12px_36px_rgba(15,23,42,0.05)]">
+    <section className="aurora-panel space-y-4 rounded-[24px] border p-6">
       <div>
         <Typography.Title level={2} className="!mb-1">
           智能运维 · 工作台

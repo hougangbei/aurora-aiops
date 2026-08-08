@@ -17,7 +17,7 @@ export function ActionMenuButton({
         <button
           type="button"
           className={[
-            'inline-flex h-8 items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-[13px] font-medium text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950 focus:outline-none',
+            'aurora-chip inline-flex h-8 items-center justify-center rounded-full border px-3 text-[13px] font-medium shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition focus:outline-none',
             className ?? '',
           ].join(' ')}
           aria-label="操作"

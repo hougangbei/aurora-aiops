@@ -15,12 +15,13 @@ import (
 )
 
 const (
-	collectorCommandBase     = "base"
-	collectorCommandDebian   = "packages_debian"
-	collectorCommandRPM      = "packages_rpm"
-	collectorCommandAPK      = "packages_apk"
-	collectorCommandServices = "services_systemd"
-	collectorCommandVersions = "versions"
+	collectorCommandBase            = "base"
+	collectorCommandDebian          = "packages_debian"
+	collectorCommandRPM             = "packages_rpm"
+	collectorCommandAPK             = "packages_apk"
+	collectorCommandServices        = "services_systemd"
+	collectorCommandVersions        = "versions"
+	collectorMalformedWarningSuffix = "_malformed"
 
 	collectorBaseLimit     int64 = 1 << 20
 	collectorPackageLimit  int64 = 8 << 20
@@ -147,33 +148,49 @@ func (c *Collector) Collect(ctx context.Context, server Server, secret Credentia
 
 	software := make([]SoftwareItem, 0)
 	if packageID := collectorPackageCommand(snapshot.OSFamily); packageID != "" {
-		items, warning, runErr := c.runOptional(ctx, target, secret, packageID)
+		result, warning, runErr := c.runOptional(ctx, target, secret, packageID)
 		if runErr != nil {
 			return Snapshot{}, nil, runErr
 		}
-		software = append(software, parseCollectorPackages(packageID, items, snapshot.Architecture)...)
-		if warning != nil {
-			software = append(software, *warning)
-		}
+		items, malformed := parseCollectorPackages(packageID, result, snapshot.Architecture)
+		software = appendCollectorOptionalResult(software, packageID, items, malformed, warning)
 	}
-	items, warning, runErr := c.runOptional(ctx, target, secret, collectorCommandServices)
+	result, warning, runErr := c.runOptional(ctx, target, secret, collectorCommandServices)
 	if runErr != nil {
 		return Snapshot{}, nil, runErr
 	}
-	software = append(software, parseCollectorServices(items)...)
-	if warning != nil {
-		software = append(software, *warning)
-	}
-	items, warning, runErr = c.runOptional(ctx, target, secret, collectorCommandVersions)
+	items, malformed := parseCollectorServices(result)
+	software = appendCollectorOptionalResult(software, collectorCommandServices, items, malformed, warning)
+	result, warning, runErr = c.runOptional(ctx, target, secret, collectorCommandVersions)
 	if runErr != nil {
 		return Snapshot{}, nil, runErr
 	}
-	software = append(software, parseCollectorVersions(items)...)
-	if warning != nil {
-		software = append(software, *warning)
-	}
+	items, malformed = parseCollectorVersions(result)
+	software = appendCollectorOptionalResult(software, collectorCommandVersions, items, malformed, warning)
 
 	return snapshot, deduplicateCollectorSoftware(software), nil
+}
+
+func appendCollectorOptionalResult(software []SoftwareItem, commandID string, items []SoftwareItem, malformed int, warning *SoftwareItem) []SoftwareItem {
+	software = append(software, items...)
+	if malformed > 0 {
+		reason := strconv.Itoa(malformed) + " malformed inventory records ignored"
+		if malformed == 1 {
+			reason = "1 malformed inventory record ignored"
+		}
+		if warning != nil && warning.Status != "" {
+			reason = warning.Status + "; " + reason
+		}
+		warning = &SoftwareItem{
+			Category: "collector_warning",
+			Name:     commandID + collectorMalformedWarningSuffix,
+			Status:   sanitizeCollectorField(reason, 512),
+		}
+	}
+	if warning != nil {
+		software = append(software, *warning)
+	}
+	return software
 }
 
 func (c *Collector) runOptional(ctx context.Context, target RemoteTarget, secret CredentialSecret, id string) (CommandResult, *SoftwareItem, error) {
@@ -400,8 +417,8 @@ func collectorPackageCommand(osFamily string) string {
 	}
 }
 
-func parseCollectorPackages(commandID string, result CommandResult, defaultArch string) []SoftwareItem {
-	lines := completeCollectorLines(result.Stdout, result.Truncated)
+func parseCollectorPackages(commandID string, result CommandResult, defaultArch string) ([]SoftwareItem, int) {
+	lines, malformed := collectorRecordLines(result.Stdout, result.Truncated)
 	items := make([]SoftwareItem, 0, len(lines))
 	for _, line := range lines {
 		if line == "" {
@@ -411,33 +428,48 @@ func parseCollectorPackages(commandID string, result CommandResult, defaultArch 
 		switch commandID {
 		case collectorCommandDebian:
 			fields := strings.Split(line, "\t")
-			if len(fields) != 3 {
+			if len(fields) != 3 || !validCollectorRawField(fields[0], 256) || !validCollectorRawField(fields[1], 512) || !validCollectorRawField(fields[2], 512) {
+				malformed++
 				continue
 			}
 			name, version, arch, source = fields[0], fields[1], fields[2], "dpkg"
-			if base, _, ok := strings.Cut(name, ":"); ok {
+			if base, suffix, ok := strings.Cut(name, ":"); ok {
+				if !validCollectorRawField(base, 256) || !validCollectorRawField(suffix, 512) || strings.Contains(suffix, ":") {
+					malformed++
+					continue
+				}
 				name = base
+			}
+			if !validCollectorRawField(name, 256) {
+				malformed++
+				continue
 			}
 		case collectorCommandRPM:
 			fields := strings.Split(line, "\t")
-			if len(fields) != 3 {
+			if len(fields) != 3 || !validCollectorRawField(fields[0], 256) || !validCollectorRawField(fields[1], 512) || !validCollectorRawField(fields[2], 512) {
+				malformed++
 				continue
 			}
 			name, version, arch, source = fields[0], fields[1], fields[2], "rpm"
 		case collectorCommandAPK:
 			name, version = splitCollectorAPK(line)
 			arch, source = defaultArch, "apk"
+			if !validCollectorRawField(name, 256) || !validCollectorRawField(version, 512) {
+				malformed++
+				continue
+			}
+		default:
+			malformed++
+			continue
 		}
 		item := SoftwareItem{
 			Category: "package", Name: sanitizeCollectorField(name, 256),
 			Version: sanitizeCollectorField(version, 512), Architecture: normalizeCollectorArchitecture(sanitizeCollectorField(arch, 512)),
 			Source: source,
 		}
-		if item.Name != "" && item.Version != "" && item.Architecture != "" {
-			items = append(items, item)
-		}
+		items = append(items, item)
 	}
-	return items
+	return items, malformed
 }
 
 func splitCollectorAPK(line string) (string, string) {
@@ -449,29 +481,35 @@ func splitCollectorAPK(line string) (string, string) {
 	return "", ""
 }
 
-func parseCollectorServices(result CommandResult) []SoftwareItem {
-	lines := completeCollectorLines(result.Stdout, result.Truncated)
+func parseCollectorServices(result CommandResult) ([]SoftwareItem, int) {
+	lines, malformed := collectorRecordLines(result.Stdout, result.Truncated)
 	items := make([]SoftwareItem, 0, len(lines))
 	for _, line := range lines {
+		if collectorServiceNoise(line) {
+			continue
+		}
 		fields := strings.Fields(line)
-		if len(fields) < 2 || !strings.HasSuffix(fields[0], ".service") {
+		if (len(fields) != 2 && len(fields) != 3) || !strings.HasSuffix(fields[0], ".service") || !validCollectorRawField(fields[0], 256) || !validCollectorRawField(fields[1], 512) || (len(fields) == 3 && !validCollectorRawField(fields[2], 512)) {
+			malformed++
 			continue
 		}
 		name := sanitizeCollectorField(fields[0], 256)
 		status := sanitizeCollectorField(fields[1], 512)
-		if name != "" && status != "" {
-			items = append(items, SoftwareItem{Category: "service", Name: name, Source: "systemd", Status: status})
-		}
+		items = append(items, SoftwareItem{Category: "service", Name: name, Source: "systemd", Status: status})
 	}
-	return items
+	return items, malformed
 }
 
-func parseCollectorVersions(result CommandResult) []SoftwareItem {
-	lines := completeCollectorLines(result.Stdout, result.Truncated)
+func parseCollectorVersions(result CommandResult) ([]SoftwareItem, int) {
+	lines, malformed := collectorRecordLines(result.Stdout, result.Truncated)
 	items := make([]SoftwareItem, 0, len(lines))
 	for _, line := range lines {
+		if line == "" {
+			continue
+		}
 		fields := strings.Split(line, "\t")
-		if len(fields) != 5 || !collectorVersionIdentityAllowed(fields[0], fields[1]) {
+		if len(fields) != 5 || !validCollectorRawField(fields[0], 256) || !validCollectorRawField(fields[1], 256) || !validCollectorRawField(fields[2], 512) || !validCollectorRawField(fields[3], 512) || !validCollectorRawField(fields[4], 512) || !collectorVersionIdentityAllowed(fields[0], fields[1]) {
+			malformed++
 			continue
 		}
 		item := SoftwareItem{
@@ -479,11 +517,9 @@ func parseCollectorVersions(result CommandResult) []SoftwareItem {
 			Version: sanitizeCollectorField(fields[2], 512), Architecture: normalizeCollectorArchitecture(sanitizeCollectorField(fields[3], 512)),
 			Status: sanitizeCollectorField(fields[4], 512),
 		}
-		if item.Name != "" && item.Version != "" && item.Architecture != "" && item.Status != "" {
-			items = append(items, item)
-		}
+		items = append(items, item)
 	}
-	return items
+	return items, malformed
 }
 
 func collectorVersionIdentityAllowed(category, name string) bool {
@@ -499,13 +535,53 @@ func collectorVersionIdentityAllowed(category, name string) bool {
 	}
 }
 
-func completeCollectorLines(output string, truncated bool) []string {
+func collectorRecordLines(output string, truncated bool) ([]string, int) {
 	output = strings.ReplaceAll(output, "\r\n", "\n")
 	lines := strings.Split(output, "\n")
+	malformed := 0
 	if truncated && !strings.HasSuffix(output, "\n") && len(lines) > 0 {
+		if lines[len(lines)-1] != "" {
+			malformed = 1
+		}
 		lines = lines[:len(lines)-1]
 	}
-	return lines
+	return lines, malformed
+}
+
+func collectorServiceNoise(line string) bool {
+	line = strings.TrimSpace(line)
+	if line == "" || line == "UNIT FILE STATE PRESET" || line == "UNIT FILE STATE VENDOR PRESET" || strings.HasPrefix(line, "Legend:") {
+		return true
+	}
+	fields := strings.Fields(line)
+	if len(fields) != 4 || fields[1] != "unit" || fields[3] != "listed." || !collectorUnsignedDecimal(fields[0]) {
+		return false
+	}
+	return (fields[0] == "1" && fields[2] == "file") || (fields[0] != "1" && fields[2] == "files")
+}
+
+func collectorUnsignedDecimal(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func validCollectorRawField(value string, maxBytes int) bool {
+	if value == "" || len(value) > maxBytes || !utf8.ValidString(value) {
+		return false
+	}
+	for _, r := range value {
+		if unicode.IsControl(r) || unicode.In(r, unicode.Cf, unicode.Zl, unicode.Zp) {
+			return false
+		}
+	}
+	return strings.TrimSpace(value) != ""
 }
 
 func sanitizeCollectorField(value string, maxBytes int) string {

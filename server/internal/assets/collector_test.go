@@ -180,7 +180,7 @@ func TestCollectorParsesAlpinePackagesServicesAndVersions(t *testing.T) {
 	commands := collectorCommandsForTest()
 	responses := collectorResponses(collectorBase("ID=alpine\nVERSION_ID=3.20.2\n", "x86_64"))
 	responses[commands[collectorCommandAPK].Command] = collectorFakeResponse{result: CommandResult{Stdout: "musl-utils-1.2.5-r0\nfoo-bar-2.3.4-r1\n"}}
-	responses[commands[collectorCommandServices].Command] = collectorFakeResponse{result: CommandResult{Stdout: "UNIT FILE STATE PRESET\nsshd.service enabled enabled\naurora-aiops.service disabled disabled\n\n2 unit files listed.\n"}}
+	responses[commands[collectorCommandServices].Command] = collectorFakeResponse{result: CommandResult{Stdout: "UNIT FILE STATE PRESET\nsshd.service enabled enabled\naurora-aiops.service disabled disabled\n\nLegend: generated output noise\n2 unit files listed.\n"}}
 	responses[commands[collectorCommandVersions].Command] = collectorFakeResponse{result: CommandResult{Stdout: "runtime\tcontainerd\t1.7.20\tamd64\trunning\nruntime\tdocker\t27.1.1\tamd64\trunning\nruntime\tcrio\t1.30.3\tamd64\tstopped\nkubernetes\tkubeadm\tv1.30.3\tamd64\tinstalled\nkubernetes\tkubelet\tv1.30.3\tamd64\trunning\nkubernetes\tkubectl\tv1.30.3\tamd64\tinstalled\naurora\taurora-aiops\t2.4.0\tamd64\tactive\nruntime\tdocker\t28.0\t\trunning\nruntime\tcrio\t2.0\tamd64\t\nruntime\tdocker\t27.1.1\tamd64\trunning\n"}}
 	remote := &collectorFakeRemote{responses: responses}
 
@@ -193,6 +193,7 @@ func TestCollectorParsesAlpinePackagesServicesAndVersions(t *testing.T) {
 	}
 	want := []SoftwareItem{
 		{Category: "aurora", Name: "aurora-aiops", Version: "2.4.0", Architecture: "amd64", Status: "active"},
+		{Category: "collector_warning", Name: collectorCommandVersions + collectorMalformedWarningSuffix, Status: "2 malformed inventory records ignored"},
 		{Category: "kubernetes", Name: "kubeadm", Version: "v1.30.3", Architecture: "amd64", Status: "installed"},
 		{Category: "kubernetes", Name: "kubectl", Version: "v1.30.3", Architecture: "amd64", Status: "installed"},
 		{Category: "kubernetes", Name: "kubelet", Version: "v1.30.3", Architecture: "amd64", Status: "running"},
@@ -206,6 +207,113 @@ func TestCollectorParsesAlpinePackagesServicesAndVersions(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("software = %#v, want %#v", got, want)
+	}
+}
+
+func TestCollectorParsersReportMalformedRecordsAndKeepValidRecords(t *testing.T) {
+	longName := strings.Repeat("x", 257)
+	tests := []struct {
+		name      string
+		parse     func(CommandResult) ([]SoftwareItem, int)
+		output    string
+		want      SoftwareItem
+		malformed int
+	}{
+		{
+			name: "dpkg",
+			parse: func(result CommandResult) ([]SoftwareItem, int) {
+				return parseCollectorPackages(collectorCommandDebian, result, "amd64")
+			},
+			output:    "curl\t8.5.0\tamd64\ntoo\tfew\n\t1.0\tamd64\nbad\x00name\t1.0\tamd64\n" + longName + "\t1.0\tamd64\n:amd64\t1.0\tamd64\nbad:extra:amd64\t1.0\tamd64\nincomplete\t1.0",
+			want:      SoftwareItem{Category: "package", Name: "curl", Version: "8.5.0", Architecture: "amd64", Source: "dpkg"},
+			malformed: 7,
+		},
+		{
+			name: "rpm",
+			parse: func(result CommandResult) ([]SoftwareItem, int) {
+				return parseCollectorPackages(collectorCommandRPM, result, "amd64")
+			},
+			output:    "bash\t5.1.8-9.el9\tx86_64\ntoo\tfew\n\t1.0\tx86_64\nbad\x00name\t1.0\tx86_64\n" + longName + "\t1.0\tx86_64\nincomplete\t1.0",
+			want:      SoftwareItem{Category: "package", Name: "bash", Version: "5.1.8-9.el9", Architecture: "amd64", Source: "rpm"},
+			malformed: 5,
+		},
+		{
+			name: "apk",
+			parse: func(result CommandResult) ([]SoftwareItem, int) {
+				return parseCollectorPackages(collectorCommandAPK, result, "amd64")
+			},
+			output:    "foo-bar-2.3.4-r1\nbad\t1.0-r0\n-1.0-r0\nbad\x00name-1.0-r0\n" + longName + "-1.0-r0\nincomplete",
+			want:      SoftwareItem{Category: "package", Name: "foo-bar", Version: "2.3.4-r1", Architecture: "amd64", Source: "apk"},
+			malformed: 5,
+		},
+		{
+			name:      "systemd",
+			parse:     parseCollectorServices,
+			output:    "UNIT FILE STATE PRESET\nsshd.service enabled enabled\ntoo-many.service enabled enabled extra\n enabled\nbad\x00.service enabled\n" + longName + ".service enabled\nUNIT FILE garbage\nnot-a-count unit files listed.\nincomplete.service",
+			want:      SoftwareItem{Category: "service", Name: "sshd.service", Source: "systemd", Status: "enabled"},
+			malformed: 7,
+		},
+		{
+			name:      "versions",
+			parse:     parseCollectorVersions,
+			output:    "runtime\tdocker\t27.1.1\tamd64\trunning\nruntime\tdocker\ttoo\tfew\nconsecutive\t\t1.0\tamd64\trunning\nruntime\tdock\x00er\t1.0\tamd64\trunning\nruntime\tdocker\t" + strings.Repeat("v", 513) + "\tamd64\trunning\nruntime\tdocker\t28.0\tamd64",
+			want:      SoftwareItem{Category: "runtime", Name: "docker", Version: "27.1.1", Architecture: "amd64", Status: "running"},
+			malformed: 5,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			items, malformed := tt.parse(CommandResult{Stdout: tt.output})
+			if malformed != tt.malformed {
+				t.Fatalf("malformed = %d, want %d", malformed, tt.malformed)
+			}
+			if !reflect.DeepEqual(items, []SoftwareItem{tt.want}) {
+				t.Fatalf("items = %#v, want %#v", items, []SoftwareItem{tt.want})
+			}
+		})
+	}
+}
+
+func TestCollectorAddsOneMalformedWarningPerOptionalCommand(t *testing.T) {
+	commands := collectorCommandsForTest()
+	tests := []struct {
+		name, osRelease, arch, commandID, output string
+	}{
+		{name: "dpkg", osRelease: "ID=ubuntu\nVERSION_ID=24.04\n", arch: "x86_64", commandID: collectorCommandDebian, output: "curl\t8.5.0\tamd64\nbroken\n"},
+		{name: "rpm", osRelease: "ID=rocky\nVERSION_ID=9.4\n", arch: "aarch64", commandID: collectorCommandRPM, output: "bash\t5.1\taarch64\nbroken\n"},
+		{name: "apk", osRelease: "ID=alpine\nVERSION_ID=3.20\n", arch: "x86_64", commandID: collectorCommandAPK, output: "musl-1.2-r0\nbroken\n"},
+		{name: "services", osRelease: "ID=ubuntu\nVERSION_ID=24.04\n", arch: "x86_64", commandID: collectorCommandServices, output: "sshd.service enabled\nbroken.service\n"},
+		{name: "versions", osRelease: "ID=ubuntu\nVERSION_ID=24.04\n", arch: "x86_64", commandID: collectorCommandVersions, output: "runtime\tdocker\t27.1\tamd64\trunning\nbroken\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			responses := collectorResponses(collectorBase(tt.osRelease, tt.arch))
+			responses[commands[tt.commandID].Command] = collectorFakeResponse{result: CommandResult{Stdout: tt.output}}
+			remote := &collectorFakeRemote{responses: responses}
+			_, software, err := NewCollector(remote, time.Now).Collect(context.Background(), Server{ID: "s", Address: "do-not-leak"}, CredentialSecret{Password: "do-not-leak"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			warningName := tt.commandID + collectorMalformedWarningSuffix
+			warningCount, totalWarnings, validCount := 0, 0, 0
+			for _, item := range software {
+				switch {
+				case item.Category == "collector_warning":
+					totalWarnings++
+					if item.Name == warningName {
+						warningCount++
+						if item.Status != "1 malformed inventory record ignored" || len(item.Status) > 512 || strings.Contains(item.Status, "do-not-leak") {
+							t.Fatalf("warning = %#v", item)
+						}
+					}
+				case item.Category != "collector_warning":
+					validCount++
+				}
+			}
+			if warningCount != 1 || totalWarnings != 1 || validCount != 1 {
+				t.Fatalf("software = %#v, warningCount=%d totalWarnings=%d validCount=%d", software, warningCount, totalWarnings, validCount)
+			}
+		})
 	}
 }
 
@@ -283,7 +391,7 @@ func TestCollectorOptionalFailuresAndTruncationBecomeSafeWarnings(t *testing.T) 
 			t.Fatal("incomplete trailing record was retained")
 		}
 	}
-	for _, id := range []string{collectorCommandDebian, collectorCommandServices, collectorCommandVersions} {
+	for _, id := range []string{collectorCommandDebian, collectorCommandServices} {
 		warning, ok := warnings[id]
 		if !ok {
 			t.Fatalf("missing warning for %s in %#v", id, software)
@@ -291,6 +399,25 @@ func TestCollectorOptionalFailuresAndTruncationBecomeSafeWarnings(t *testing.T) 
 		if len(warning.Status) > 512 || strings.ContainsAny(warning.Status, "\n\r\t") || strings.Contains(warning.Status, "hunter2") || strings.Contains(warning.Status, "target-secret") || strings.Contains(warning.Status, "server-secret") {
 			t.Fatalf("unsafe warning = %#v", warning)
 		}
+	}
+	truncatedWarning, ok := warnings[collectorCommandVersions+collectorMalformedWarningSuffix]
+	if !ok {
+		t.Fatalf("missing combined truncation/malformed warning in %#v", software)
+	}
+	if truncatedWarning.Status != "output truncated; 1 malformed inventory record ignored" {
+		t.Fatalf("combined warning = %#v", truncatedWarning)
+	}
+	if len(warnings) != 3 {
+		t.Fatalf("warnings = %#v, want exactly three", warnings)
+	}
+	foundDocker := false
+	for _, item := range software {
+		if item.Category == "runtime" && item.Name == "docker" && item.Version == "27.1" {
+			foundDocker = true
+		}
+	}
+	if !foundDocker {
+		t.Fatalf("valid complete record was lost: %#v", software)
 	}
 }
 

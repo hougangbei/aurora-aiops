@@ -32,10 +32,10 @@ function getTone(
 
   if (hasWarning) {
     return {
-      button: 'border-red-200 bg-red-50 text-red-700 hover:border-red-300 hover:bg-red-100',
-      dot: 'bg-red-500',
-      pill: 'bg-red-100 text-red-700',
-      label: '异常',
+      button: 'border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-300 hover:bg-amber-100',
+      dot: 'bg-amber-500',
+      pill: 'bg-amber-100 text-amber-700',
+      label: '告警',
     };
   }
 
@@ -77,7 +77,7 @@ function getPrimaryCopy(
 ) {
   if (warning) {
     return {
-      title: '状态检查异常',
+      title: '状态检查告警',
       description: warning,
     };
   }

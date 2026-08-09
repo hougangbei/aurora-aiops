@@ -30,6 +30,14 @@ type CredentialEnvelope struct {
 	KeyVersion int
 }
 
+type StoredCredential struct {
+	ID        string
+	AuthType  CredentialAuthType
+	Envelope  CredentialEnvelope
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type Server struct {
 	ID                   string
 	Name                 string

@@ -88,7 +88,7 @@ func collectorResponses(base string) map[string]collectorFakeResponse {
 func TestCollectorCollectsUbuntuSystemAndDebianPackages(t *testing.T) {
 	commands := collectorCommandsForTest()
 	responses := collectorResponses(collectorBase("NAME=Ubuntu\nID=ubuntu\nVERSION_ID=\"24.04\"\n", "x86_64"))
-	responses[commands[collectorCommandDebian].Command] = collectorFakeResponse{result: CommandResult{Stdout: "curl\t8.5.0-2ubuntu10.4\tamd64\nlibssl3:amd64\t3.0.13-0ubuntu3.4\tamd64\nlibssl3:arm64\t3.0.13-0ubuntu3.4\tarm64\n"}}
+	responses[commands[collectorCommandDebian].Command] = collectorFakeResponse{result: CommandResult{Stdout: "curl\t8.5.0-2ubuntu10.4\tamd64\tinstalled\nlegacy\t1.0\tamd64\tconfig-files\nabsent\t1.0\tamd64\tnot-installed\nlibssl3:amd64\t3.0.13-0ubuntu3.4\tamd64\tinstalled\nlibssl3:arm64\t3.0.13-0ubuntu3.4\tarm64\tinstalled\n"}}
 	remote := &collectorFakeRemote{responses: responses}
 	now := time.Date(2026, time.August, 9, 4, 5, 6, 0, time.FixedZone("fixture", 8*60*60))
 	server := Server{ID: "server-1", Address: "192.0.2.10", SSHPort: 2222, Username: "ops", HostKeyFingerprint: "SHA256:fixed"}
@@ -176,6 +176,87 @@ func TestCollectorNormalizesDebianFamilyReleases(t *testing.T) {
 	}
 }
 
+func TestCollectorDebianPackagesRequireInstalledState(t *testing.T) {
+	output := "installed\t2.0\tamd64\tinstalled\n" +
+		"rc-package\t1.0\tamd64\tconfig-files\n" +
+		"absent\t1.0\tamd64\tnot-installed\n" +
+		"transition1\t1.0\tamd64\thalf-installed\n" +
+		"transition2\t1.0\tamd64\tunpacked\n" +
+		"transition3\t1.0\tamd64\thalf-configured\n" +
+		"transition4\t1.0\tamd64\ttriggers-awaited\n" +
+		"transition5\t1.0\tamd64\ttriggers-pending\n" +
+		"unknown\t1.0\tamd64\tmystery-state\n" +
+		"missing\t1.0\tamd64\n"
+	items, malformed := parseCollectorPackages(collectorCommandDebian, CommandResult{Stdout: output}, "amd64")
+	want := []SoftwareItem{{Category: "package", Name: "installed", Version: "2.0", Architecture: "amd64", Source: "dpkg"}}
+	if !reflect.DeepEqual(items, want) || malformed != 2 {
+		t.Fatalf("items=%#v malformed=%d, want %#v malformed=2", items, malformed, want)
+	}
+	command := collectorCommandsForTest()[collectorCommandDebian].Command
+	if !strings.Contains(command, `${db:Status-Status}`) {
+		t.Fatalf("dpkg command lacks machine-readable installed state: %q", command)
+	}
+}
+
+func TestCollectorOptionalTransportErrorWithoutExitStatusIsGeneric(t *testing.T) {
+	command := collectorCommandsForTest()[collectorCommandServices]
+	remote := &collectorFakeRemote{responses: map[string]collectorFakeResponse{
+		command.Command: {result: CommandResult{ExitCode: 0, Stderr: "secret output"}, err: errors.New("network secret")},
+	}}
+	collector := NewCollector(remote, time.Now)
+	_, warning, err := collector.runOptional(context.Background(), RemoteTarget{Address: "secret target"}, CredentialSecret{Password: "secret password"}, collectorCommandServices)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if warning == nil || warning.Status != "command failed" {
+		t.Fatalf("warning = %#v, want generic command failed", warning)
+	}
+}
+
+func TestCollectorSplitsAPKRecordsFromRight(t *testing.T) {
+	tests := []struct {
+		line, wantName, wantVersion string
+	}{
+		{line: "foo-2-utils-1.0-r0", wantName: "foo-2-utils", wantVersion: "1.0-r0"},
+		{line: "pkg-1.0-r10", wantName: "pkg", wantVersion: "1.0-r10"},
+		{line: "pkg-2:1.0-r0", wantName: "pkg", wantVersion: "2:1.0-r0"},
+		{line: "pkg-1.0-rx"},
+		{line: "pkg-1.0 bad-r0"},
+		{line: "pkg-r0"},
+		{line: "-1.0-r0"},
+		{line: "pkg-1.0-r0-extra"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.line, func(t *testing.T) {
+			name, version := splitCollectorAPK(tt.line)
+			if name != tt.wantName || version != tt.wantVersion {
+				t.Fatalf("splitCollectorAPK(%q) = (%q, %q), want (%q, %q)", tt.line, name, version, tt.wantName, tt.wantVersion)
+			}
+		})
+	}
+}
+
+func TestCollectorBaseCommandUsesPortableDFAndTruncatesUptime(t *testing.T) {
+	command := collectorCommandsForTest()[collectorCommandBase].Command
+	if !strings.Contains(command, "df -PB1 /") || strings.Contains(command, "df -B1 /") {
+		t.Fatalf("base command does not force POSIX one-line df output: %q", command)
+	}
+	if !strings.Contains(command, `\$2 ~ /^[0-9]+\$/`) {
+		t.Fatalf("base command does not validate the numeric total-byte field: %q", command)
+	}
+	// Without df -P, long device names historically wrapped the numeric fields
+	// onto a following line; the fixed protocol must not depend on that layout.
+	wrappedDevice := "Filesystem 1-blocks Used Available Capacity Mounted on\n/dev/mapper/very-long-device-name\n 107374182400 1 2 1% /\n"
+	if fields := strings.Fields(strings.Split(wrappedDevice, "\n")[1]); len(fields) != 1 {
+		t.Fatalf("historical fixture did not wrap as intended: %q", wrappedDevice)
+	}
+	base := strings.Replace(collectorBase("ID=ubuntu\nVERSION_ID=24.04\n", "x86_64"), "UPTIME_SECONDS=86400", "UPTIME_SECONDS=123.9", 1)
+	snapshot, err := parseCollectorBase(base)
+	if err != nil || snapshot.UptimeSeconds != 123 {
+		t.Fatalf("snapshot=%#v err=%v, want uptime 123", snapshot, err)
+	}
+}
+
 func TestCollectorParsesAlpinePackagesServicesAndVersions(t *testing.T) {
 	commands := collectorCommandsForTest()
 	responses := collectorResponses(collectorBase("ID=alpine\nVERSION_ID=3.20.2\n", "x86_64"))
@@ -224,7 +305,7 @@ func TestCollectorParsersReportMalformedRecordsAndKeepValidRecords(t *testing.T)
 			parse: func(result CommandResult) ([]SoftwareItem, int) {
 				return parseCollectorPackages(collectorCommandDebian, result, "amd64")
 			},
-			output:    "curl\t8.5.0\tamd64\ntoo\tfew\n\t1.0\tamd64\nbad\x00name\t1.0\tamd64\n" + longName + "\t1.0\tamd64\n:amd64\t1.0\tamd64\nbad:extra:amd64\t1.0\tamd64\nincomplete\t1.0",
+			output:    "curl\t8.5.0\tamd64\tinstalled\ntoo\tfew\n\t1.0\tamd64\tinstalled\nbad\x00name\t1.0\tamd64\tinstalled\n" + longName + "\t1.0\tamd64\tinstalled\n:amd64\t1.0\tamd64\tinstalled\nbad:extra:amd64\t1.0\tamd64\tinstalled\nincomplete\t1.0",
 			want:      SoftwareItem{Category: "package", Name: "curl", Version: "8.5.0", Architecture: "amd64", Source: "dpkg"},
 			malformed: 7,
 		},
@@ -279,7 +360,7 @@ func TestCollectorAddsOneMalformedWarningPerOptionalCommand(t *testing.T) {
 	tests := []struct {
 		name, osRelease, arch, commandID, output string
 	}{
-		{name: "dpkg", osRelease: "ID=ubuntu\nVERSION_ID=24.04\n", arch: "x86_64", commandID: collectorCommandDebian, output: "curl\t8.5.0\tamd64\nbroken\n"},
+		{name: "dpkg", osRelease: "ID=ubuntu\nVERSION_ID=24.04\n", arch: "x86_64", commandID: collectorCommandDebian, output: "curl\t8.5.0\tamd64\tinstalled\nbroken\n"},
 		{name: "rpm", osRelease: "ID=rocky\nVERSION_ID=9.4\n", arch: "aarch64", commandID: collectorCommandRPM, output: "bash\t5.1\taarch64\nbroken\n"},
 		{name: "apk", osRelease: "ID=alpine\nVERSION_ID=3.20\n", arch: "x86_64", commandID: collectorCommandAPK, output: "musl-1.2-r0\nbroken\n"},
 		{name: "services", osRelease: "ID=ubuntu\nVERSION_ID=24.04\n", arch: "x86_64", commandID: collectorCommandServices, output: "sshd.service enabled\nbroken.service\n"},
@@ -373,7 +454,7 @@ func TestCollectorRejectsRequiredProbeFailuresAndInvalidBase(t *testing.T) {
 func TestCollectorOptionalFailuresAndTruncationBecomeSafeWarnings(t *testing.T) {
 	commands := collectorCommandsForTest()
 	responses := collectorResponses(collectorBase("ID=ubuntu\nVERSION_ID=22.04\n", "x86_64"))
-	responses[commands[collectorCommandDebian].Command] = collectorFakeResponse{err: errors.New("password=hunter2\nremote\tcontrol")}
+	responses[commands[collectorCommandDebian].Command] = collectorFakeResponse{result: CommandResult{ExitCode: 127, Stderr: "password=hunter2"}, err: errors.New("exit status 127: password=hunter2")}
 	responses[commands[collectorCommandServices].Command] = collectorFakeResponse{result: CommandResult{ExitCode: 127, Stderr: strings.Repeat("x", 900)}}
 	responses[commands[collectorCommandVersions].Command] = collectorFakeResponse{result: CommandResult{Stdout: "runtime\tdocker\t27.1\tamd64\trunning\nruntime\ttruncated", Truncated: true}}
 	remote := &collectorFakeRemote{responses: responses}
@@ -399,6 +480,9 @@ func TestCollectorOptionalFailuresAndTruncationBecomeSafeWarnings(t *testing.T) 
 		if len(warning.Status) > 512 || strings.ContainsAny(warning.Status, "\n\r\t") || strings.Contains(warning.Status, "hunter2") || strings.Contains(warning.Status, "target-secret") || strings.Contains(warning.Status, "server-secret") {
 			t.Fatalf("unsafe warning = %#v", warning)
 		}
+	}
+	if got := warnings[collectorCommandDebian].Status; got != "command exited with status 127" {
+		t.Fatalf("exit-error warning status = %q", got)
 	}
 	truncatedWarning, ok := warnings[collectorCommandVersions+collectorMalformedWarningSuffix]
 	if !ok {
@@ -538,5 +622,81 @@ func TestCollectorDeduplicatesByPersistenceIdentityDeterministically(t *testing.
 			t.Fatalf("deduplicated software = %#v, want %#v", got, want)
 		}
 		input[0], input[len(input)-1] = input[len(input)-1], input[0]
+	}
+}
+
+func TestCollectorPackageVersionComparisonAndWinnerSelection(t *testing.T) {
+	tests := []struct {
+		name, lower, higher string
+	}{
+		{name: "numeric run", lower: "6.9", higher: "6.10"},
+		{name: "epoch", lower: "1:9.99", higher: "2:1.0"},
+		{name: "apk release", lower: "1.0-r9", higher: "1.0-r10"},
+		{name: "rpm release", lower: "1.0-9.el9", higher: "1.0-10.el9"},
+		{name: "tilde prerelease", lower: "1.0~rc1", higher: "1.0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := compareCollectorPackageVersions(tt.lower, tt.higher); got >= 0 {
+				t.Fatalf("compare(%q, %q) = %d, want < 0", tt.lower, tt.higher, got)
+			}
+			if got := compareCollectorPackageVersions(tt.higher, tt.lower); got <= 0 {
+				t.Fatalf("compare(%q, %q) = %d, want > 0", tt.higher, tt.lower, got)
+			}
+			items := []SoftwareItem{
+				{Category: "package", Name: "same", Version: tt.higher, Architecture: "amd64", Source: "fixture"},
+				{Category: "package", Name: "same", Version: tt.lower, Architecture: "amd64", Source: "fixture"},
+			}
+			got := deduplicateCollectorSoftware(items)
+			if len(got) != 1 || got[0].Version != tt.higher {
+				t.Fatalf("deduplicated items = %#v, want version %q", got, tt.higher)
+			}
+		})
+	}
+	if got := compareCollectorPackageVersions("01.002", "1.2"); got != 0 {
+		t.Fatalf("numeric semantic equality = %d, want 0", got)
+	}
+}
+
+func TestCollectorRejectsNumericBoundaries(t *testing.T) {
+	base := collectorBase("ID=ubuntu\nVERSION_ID=24.04\n", "x86_64")
+	tests := map[string]string{
+		"zero CPU":                   "CPU_CORES=0",
+		"negative CPU":               "CPU_CORES=-1",
+		"CPU overflow":               "CPU_CORES=9223372036854775808",
+		"zero memory":                "MEM_TOTAL_KB=0",
+		"negative memory":            "MEM_TOTAL_KB=-1",
+		"memory integer overflow":    "MEM_TOTAL_KB=9223372036854775808",
+		"memory multiply overflow":   "MEM_TOTAL_KB=9007199254740992",
+		"zero disk":                  "DISK_TOTAL_BYTES=0",
+		"negative disk":              "DISK_TOTAL_BYTES=-1",
+		"disk overflow":              "DISK_TOTAL_BYTES=9223372036854775808",
+		"NaN load":                   "LOAD1=NaN",
+		"positive infinite load":     "LOAD1=+Inf",
+		"negative infinite load":     "LOAD1=-Inf",
+		"negative uptime":            "UPTIME_SECONDS=-0.1",
+		"uptime conversion overflow": "UPTIME_SECONDS=9223372036854775808",
+	}
+	for name, replacement := range tests {
+		t.Run(name, func(t *testing.T) {
+			key := strings.SplitN(replacement, "=", 2)[0]
+			var original string
+			switch key {
+			case "CPU_CORES":
+				original = "CPU_CORES=8"
+			case "MEM_TOTAL_KB":
+				original = "MEM_TOTAL_KB=16384"
+			case "DISK_TOTAL_BYTES":
+				original = "DISK_TOTAL_BYTES=107374182400"
+			case "LOAD1":
+				original = "LOAD1=1.25"
+			case "UPTIME_SECONDS":
+				original = "UPTIME_SECONDS=86400"
+			}
+			_, err := parseCollectorBase(strings.Replace(base, original, replacement, 1))
+			if !errors.Is(err, ErrInvalidInput) {
+				t.Fatalf("error = %v, want ErrInvalidInput", err)
+			}
+		})
 	}
 }

@@ -38,12 +38,12 @@ printf "ARCH=%s\n" "$(uname -m)"
 printf "HOSTNAME=%s\n" "$(hostname)"
 printf "CPU_CORES=%s\n" "$(getconf _NPROCESSORS_ONLN)"
 awk "/^MemTotal:/ { print \"MEM_TOTAL_KB=\" \$2; found=1; exit } END { if (!found) print \"MEM_TOTAL_KB=\" }" /proc/meminfo
-df -B1 / | awk "NR==2 { print \"DISK_TOTAL_BYTES=\" \$2; found=1 } END { if (!found) print \"DISK_TOTAL_BYTES=\" }"
+df -PB1 / | awk "NR==2 && \$2 ~ /^[0-9]+\$/ { print \"DISK_TOTAL_BYTES=\" \$2; found=1 } END { if (!found) print \"DISK_TOTAL_BYTES=\" }"
 awk "{ print \"LOAD1=\" \$1 }" /proc/loadavg
-awk "{ printf \"UPTIME_SECONDS=%.0f\\n\", \$1 }" /proc/uptime
+awk "{ print \"UPTIME_SECONDS=\" \$1 }" /proc/uptime
 printf "%s\n" AURORA_BASE_END
 '`
-	collectorDebianCommand   = `LC_ALL=C dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n'`
+	collectorDebianCommand   = `LC_ALL=C dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\t${db:Status-Status}\n'`
 	collectorRPMCommand      = `LC_ALL=C rpm -qa --qf '%{NAME}\t%{VERSION}-%{RELEASE}\t%{ARCH}\n'`
 	collectorAPKCommand      = `LC_ALL=C apk info -v`
 	collectorServicesCommand = `LC_ALL=C systemctl list-unit-files --type=service --no-legend --no-pager`
@@ -204,10 +204,14 @@ func (c *Collector) runOptional(ctx context.Context, target RemoteTarget, secret
 	}
 	var reason string
 	switch {
+	case err != nil && result.ExitCode > 0:
+		reason = "command exited with status " + strconv.Itoa(result.ExitCode)
 	case err != nil:
 		reason = "command failed"
-	case result.ExitCode != 0:
+	case result.ExitCode > 0:
 		reason = "command exited with status " + strconv.Itoa(result.ExitCode)
+	case result.ExitCode < 0:
+		reason = "command failed"
 	case result.Truncated:
 		reason = "output truncated"
 	}
@@ -318,8 +322,8 @@ func parseCollectorBase(output string) (Snapshot, error) {
 	if err != nil || math.IsNaN(load1) || math.IsInf(load1, 0) || load1 < 0 {
 		return Snapshot{}, invalidCollectorBase()
 	}
-	uptime, err := strconv.ParseInt(strings.TrimSpace(values["UPTIME_SECONDS"]), 10, 64)
-	if err != nil || uptime < 0 {
+	uptime, err := parseCollectorUptime(values["UPTIME_SECONDS"])
+	if err != nil {
 		return Snapshot{}, invalidCollectorBase()
 	}
 
@@ -335,6 +339,19 @@ func parseCollectorBase(output string) (Snapshot, error) {
 		Load1:         load1,
 		UptimeSeconds: uptime,
 	}, nil
+}
+
+func parseCollectorUptime(value string) (int64, error) {
+	value = strings.TrimSpace(value)
+	integer, fraction, hasFraction := strings.Cut(value, ".")
+	if integer == "" || !collectorUnsignedDecimal(integer) || (hasFraction && (fraction == "" || !collectorUnsignedDecimal(fraction))) {
+		return 0, ErrInvalidInput
+	}
+	uptime, err := strconv.ParseInt(integer, 10, 64)
+	if err != nil {
+		return 0, ErrInvalidInput
+	}
+	return uptime, nil
 }
 
 func validCollectorOSReleaseKey(key string) bool {
@@ -428,7 +445,15 @@ func parseCollectorPackages(commandID string, result CommandResult, defaultArch 
 		switch commandID {
 		case collectorCommandDebian:
 			fields := strings.Split(line, "\t")
-			if len(fields) != 3 || !validCollectorRawField(fields[0], 256) || !validCollectorRawField(fields[1], 512) || !validCollectorRawField(fields[2], 512) {
+			if len(fields) != 4 || !validCollectorRawField(fields[0], 256) || !validCollectorRawField(fields[1], 512) || !validCollectorRawField(fields[2], 512) || !validCollectorRawField(fields[3], 512) {
+				malformed++
+				continue
+			}
+			switch fields[3] {
+			case "installed":
+			case "config-files", "not-installed", "half-installed", "unpacked", "half-configured", "triggers-awaited", "triggers-pending":
+				continue
+			default:
 				malformed++
 				continue
 			}
@@ -473,12 +498,31 @@ func parseCollectorPackages(commandID string, result CommandResult, defaultArch 
 }
 
 func splitCollectorAPK(line string) (string, string) {
-	for i := 0; i+1 < len(line); i++ {
-		if line[i] == '-' && line[i+1] >= '0' && line[i+1] <= '9' {
-			return line[:i], line[i+1:]
+	for i := len(line) - 2; i > 0; i-- {
+		if line[i] != '-' || line[i+1] < '0' || line[i+1] > '9' {
+			continue
 		}
+		candidate := line[i+1:]
+		release := strings.LastIndex(candidate, "-r")
+		if release <= 0 || release+2 == len(candidate) || !collectorUnsignedDecimal(candidate[release+2:]) || !validCollectorAPKVersion(candidate[:release]) {
+			continue
+		}
+		return line[:i], candidate
 	}
 	return "", ""
+}
+
+func validCollectorAPKVersion(version string) bool {
+	if version == "" || !collectorASCIIDigit(version[0]) {
+		return false
+	}
+	for i := 1; i < len(version); i++ {
+		value := version[i]
+		if !collectorASCIIDigit(value) && (value < 'A' || value > 'Z') && (value < 'a' || value > 'z') && !strings.ContainsRune("._+~:-", rune(value)) {
+			return false
+		}
+	}
+	return true
 }
 
 func parseCollectorServices(result CommandResult) ([]SoftwareItem, int) {
@@ -604,6 +648,9 @@ func sanitizeCollectorField(value string, maxBytes int) string {
 	return strings.TrimSpace(builder.String())
 }
 
+// deduplicateCollectorSoftware intentionally keeps one lossy winner for each
+// database identity (category, name, architecture). The schema cannot retain
+// parallel installed versions, so the semantic greatest version wins.
 func deduplicateCollectorSoftware(items []SoftwareItem) []SoftwareItem {
 	type identity struct {
 		category     string
@@ -642,10 +689,106 @@ func deduplicateCollectorSoftware(items []SoftwareItem) []SoftwareItem {
 }
 
 func collectorSoftwareGreater(candidate, current SoftwareItem) bool {
-	if candidate.Version != current.Version {
-		return candidate.Version > current.Version
+	if compared := compareCollectorPackageVersions(candidate.Version, current.Version); compared != 0 {
+		return compared > 0
 	}
 	return collectorSoftwareLexical(candidate) > collectorSoftwareLexical(current)
+}
+
+func compareCollectorPackageVersions(left, right string) int {
+	leftEpoch, leftVersion := splitCollectorVersionEpoch(left)
+	rightEpoch, rightVersion := splitCollectorVersionEpoch(right)
+	if compared := compareCollectorNumericRun(leftEpoch, rightEpoch); compared != 0 {
+		return compared
+	}
+	for leftIndex, rightIndex := 0, 0; ; {
+		leftTilde := leftIndex < len(leftVersion) && leftVersion[leftIndex] == '~'
+		rightTilde := rightIndex < len(rightVersion) && rightVersion[rightIndex] == '~'
+		if leftTilde || rightTilde {
+			switch {
+			case leftTilde && rightTilde:
+				leftIndex++
+				rightIndex++
+				continue
+			case leftTilde:
+				return -1
+			default:
+				return 1
+			}
+		}
+		if leftIndex == len(leftVersion) || rightIndex == len(rightVersion) {
+			switch {
+			case leftIndex == len(leftVersion) && rightIndex == len(rightVersion):
+				return 0
+			case leftIndex == len(leftVersion):
+				return -1
+			default:
+				return 1
+			}
+		}
+
+		leftDigit := collectorASCIIDigit(leftVersion[leftIndex])
+		rightDigit := collectorASCIIDigit(rightVersion[rightIndex])
+		if leftDigit && rightDigit {
+			leftEnd := collectorVersionRunEnd(leftVersion, leftIndex, true)
+			rightEnd := collectorVersionRunEnd(rightVersion, rightIndex, true)
+			if compared := compareCollectorNumericRun(leftVersion[leftIndex:leftEnd], rightVersion[rightIndex:rightEnd]); compared != 0 {
+				return compared
+			}
+			leftIndex, rightIndex = leftEnd, rightEnd
+			continue
+		}
+		if leftDigit != rightDigit {
+			if leftDigit {
+				return 1
+			}
+			return -1
+		}
+		leftEnd := collectorVersionRunEnd(leftVersion, leftIndex, false)
+		rightEnd := collectorVersionRunEnd(rightVersion, rightIndex, false)
+		if compared := strings.Compare(leftVersion[leftIndex:leftEnd], rightVersion[rightIndex:rightEnd]); compared != 0 {
+			return compared
+		}
+		leftIndex, rightIndex = leftEnd, rightEnd
+	}
+}
+
+func splitCollectorVersionEpoch(version string) (string, string) {
+	epoch, remainder, ok := strings.Cut(version, ":")
+	if ok && epoch != "" && collectorUnsignedDecimal(epoch) {
+		return epoch, remainder
+	}
+	return "0", version
+}
+
+func compareCollectorNumericRun(left, right string) int {
+	left = strings.TrimLeft(left, "0")
+	right = strings.TrimLeft(right, "0")
+	if left == "" {
+		left = "0"
+	}
+	if right == "" {
+		right = "0"
+	}
+	if len(left) != len(right) {
+		if len(left) < len(right) {
+			return -1
+		}
+		return 1
+	}
+	return strings.Compare(left, right)
+}
+
+func collectorVersionRunEnd(version string, start int, digits bool) int {
+	end := start
+	for end < len(version) && version[end] != '~' && collectorASCIIDigit(version[end]) == digits {
+		end++
+	}
+	return end
+}
+
+func collectorASCIIDigit(value byte) bool {
+	return value >= '0' && value <= '9'
 }
 
 func collectorSoftwareLexical(item SoftwareItem) string {

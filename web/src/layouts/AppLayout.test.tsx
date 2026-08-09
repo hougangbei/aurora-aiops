@@ -1,4 +1,5 @@
 import { screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -26,5 +27,22 @@ describe('AppLayout responsive header', () => {
 
     expect(headerInner).toHaveClass('flex-col', 'sm:flex-row');
     expect(namespaceSelect).toHaveStyle({ width: '132px' });
+  });
+
+  it('offers an all-namespaces scope for cluster-wide resource views', async () => {
+    const user = userEvent.setup();
+
+    renderWithProviders(
+      <MemoryRouter initialEntries={['/topology']}>
+        <AppLayout>
+          <div>topology content</div>
+        </AppLayout>
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole('combobox'));
+    await user.click(screen.getByText('全部命名空间'));
+
+    expect(useAppStore.getState().namespace).toBe('all');
   });
 });

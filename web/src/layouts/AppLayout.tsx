@@ -200,8 +200,13 @@ export function AppLayout({ children }: PropsWithChildren) {
     dataMode,
   ]);
 
-  const namespaceOptions =
-    dataMode === 'demo' ? demoNamespaces : namespacesQuery.data ?? [];
+  const namespaces = dataMode === 'demo' ? demoNamespaces : namespacesQuery.data ?? [];
+  const namespaceOptions = [
+    { label: '全部命名空间', value: 'all' },
+    ...namespaces
+      .filter((item) => item !== 'all' && item !== 'all-namespaces')
+      .map((item) => ({ label: item, value: item })),
+  ];
 
   const activeItem = useMemo(() => findNavigationItem(location.pathname), [location.pathname]);
   const activeSectionKey =
@@ -295,7 +300,7 @@ export function AppLayout({ children }: PropsWithChildren) {
                 <Select
                   value={namespace}
                   style={{ width: screens.sm ? 180 : 132 }}
-                  options={namespaceOptions.map((item) => ({ label: item, value: item }))}
+                  options={namespaceOptions}
                   onChange={setNamespace}
                 />
               </Space>

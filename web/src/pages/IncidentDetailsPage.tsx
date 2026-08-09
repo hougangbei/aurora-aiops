@@ -2,13 +2,13 @@ import { ReloadOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, App, Button, Card, Descriptions, Space, Spin, Tag, Typography } from 'antd';
 import { useMemo } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { AgentTimeline } from '../modules/aiops/components/AgentTimeline';
 import { IncidentStatusTag } from '../modules/aiops/components/IncidentStatusTag';
 import { RemediationPanel } from '../modules/aiops/components/RemediationPanel';
 import { RootCausePanel } from '../modules/aiops/components/RootCausePanel';
-import { getEvidence, getIncident, getRuns, reanalyzeIncident } from '../modules/aiops/api';
+import { getAIOpsReadiness, getEvidence, getIncident, getRuns, reanalyzeIncident } from '../modules/aiops/api';
 import { demoIncidents } from '../modules/aiops/demo';
 import { formatTime } from '../modules/aiops/format';
 import type { AgentRun } from '../modules/aiops/types';
@@ -40,6 +40,11 @@ export function IncidentDetailsPage() {
     queryFn: () => getEvidence(id),
     enabled: dataMode === 'live' && Boolean(id),
   });
+  const readinessQuery = useQuery({
+    queryKey: ['aiops', 'readiness'],
+    queryFn: getAIOpsReadiness,
+    enabled: dataMode === 'live',
+  });
 
   // SSE 增量更新：收到事件后刷新上面的查询缓存。
   useIncidentEvents({ incidentId: id, enabled: dataMode === 'live' && Boolean(id) });
@@ -55,6 +60,10 @@ export function IncidentDetailsPage() {
     () => runs.filter((run) => run.role === 'remediation').sort((a, b) => b.attempt - a.attempt)[0],
     [runs],
   );
+  const waitingForModel =
+    readinessQuery.data?.modelConfigured === false &&
+    rootCauseRun?.status === 'skipped' &&
+    rootCauseRun.summary === 'model_unavailable';
 
   const reanalyzeMutation = useMutation({
     mutationFn: () => reanalyzeIncident(id),
@@ -97,6 +106,20 @@ export function IncidentDetailsPage() {
         <Alert type="error" showIcon message="加载失败" description={String(incidentQuery.error)} />
       ) : null}
 
+      {waitingForModel ? (
+        <Alert
+          type="warning"
+          showIcon
+          message="等待模型配置"
+          description="分类和证据采集已完成；模型未配置，因此根因分析、修复建议和风险评估暂时暂停。证据不会丢失，配置模型后可重新诊断。"
+          action={
+            <Link to="/aiops/settings">
+              <Button size="small">查看模型配置说明</Button>
+            </Link>
+          }
+        />
+      ) : null}
+
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
@@ -104,6 +127,7 @@ export function IncidentDetailsPage() {
               {incident.summary}
             </Typography.Title>
             <IncidentStatusTag status={incident.status} />
+            {waitingForModel ? <Tag color="warning">等待模型</Tag> : null}
           </div>
           <Descriptions
             className="!mt-4"

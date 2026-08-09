@@ -104,6 +104,15 @@ func NewWorkflow(opts WorkflowOptions) *Workflow {
 	}
 }
 
+// ModelStatus exposes only the non-secret runtime model state needed by the
+// operator UI. Endpoint URLs and credentials never leave the server.
+func (w *Workflow) ModelStatus() (configured bool, model string) {
+	if w == nil {
+		return false, ""
+	}
+	return w.modelConfigured, w.model
+}
+
 // Run drives the incident through every remaining role. It takes a per-incident
 // workflow lock so concurrent triggers for the same incident are serialized
 // (the loser returns ErrWorkflowLocked). The incident's current status decides

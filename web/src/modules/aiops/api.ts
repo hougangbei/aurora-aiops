@@ -1,6 +1,8 @@
 import { http } from '../../services/http';
 import type {
   AgentRun,
+  AIOpsReadiness,
+  ClusterConnection,
   CreateIncidentInput,
   EvidenceEdge,
   EvidenceNode,
@@ -18,6 +20,16 @@ function unwrap<T>(response: { data: { code: string; message?: string; data: T }
 
 export async function listIncidents(params?: { status?: string; namespace?: string }): Promise<Incident[]> {
   const response = await http.get('/aiops/incidents', { params });
+  return unwrap(response);
+}
+
+export async function getAIOpsReadiness(): Promise<AIOpsReadiness> {
+  const response = await http.get('/aiops/readiness');
+  return unwrap(response);
+}
+
+export async function getClusterConnection(): Promise<ClusterConnection> {
+  const response = await http.get('/cluster/connection');
   return unwrap(response);
 }
 

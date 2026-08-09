@@ -18,7 +18,7 @@ export function EvidenceDrawer({ node, onClose }: { node: EvidenceNode | null; o
             <span className="font-mono text-xs">{node.hash || '--'}</span>
           </Descriptions.Item>
           <Descriptions.Item label="脱敏载荷">
-            <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-all rounded-md bg-slate-50 p-3 text-xs">
+            <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-all rounded-md border border-indigo-200/10 bg-[#0b1120] p-3 text-xs text-slate-200">
               {node.payload}
             </pre>
           </Descriptions.Item>

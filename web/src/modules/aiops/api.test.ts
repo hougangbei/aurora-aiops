@@ -16,6 +16,8 @@ import {
   executeRemediation,
   getEvidence,
   getIncident,
+  getAIOpsReadiness,
+  getClusterConnection,
   getRuns,
   listIncidents,
   reanalyzeIncident,
@@ -45,6 +47,18 @@ describe('aiops api client', () => {
     getMock.mockResolvedValue(okEnvelope({ id: 'inc-1' }));
     await getIncident('inc/with?slash');
     expect(getMock).toHaveBeenCalledWith('/aiops/incidents/inc%2Fwith%3Fslash');
+  });
+
+  it('getAIOpsReadiness GETs truthful runtime capabilities', async () => {
+    getMock.mockResolvedValue(okEnvelope({ modelConfigured: false }));
+    await getAIOpsReadiness();
+    expect(getMock).toHaveBeenCalledWith('/aiops/readiness');
+  });
+
+  it('getClusterConnection GETs the cached cluster probe', async () => {
+    getMock.mockResolvedValue(okEnvelope({ state: 'connected' }));
+    await getClusterConnection();
+    expect(getMock).toHaveBeenCalledWith('/cluster/connection');
   });
 
   it('createIncident POSTs the create body', async () => {

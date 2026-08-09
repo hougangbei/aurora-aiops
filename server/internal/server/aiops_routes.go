@@ -37,6 +37,15 @@ type aiopsRoutesDeps struct {
 	remediation *remediation.Service
 }
 
+type aiopsReadinessResponse struct {
+	ModelConfigured             bool   `json:"modelConfigured"`
+	Model                       string `json:"model"`
+	ConfigurationSource         string `json:"configurationSource"`
+	RuntimeMutable              bool   `json:"runtimeMutable"`
+	DeterministicRolesAvailable bool   `json:"deterministicRolesAvailable"`
+	RemediationAvailable        bool   `json:"remediationAvailable"`
+}
+
 // sseHeartbeat keeps event-stream clients alive through idle periods.
 const sseHeartbeat = 15 * time.Second
 
@@ -45,6 +54,8 @@ const sseHeartbeat = 15 * time.Second
 // the RequireSession middleware. read routes accept any authenticated role;
 // reanalyze additionally requires operator/admin.
 func registerAIOpsRoutes(group *gin.RouterGroup, deps aiopsRoutesDeps) {
+	group.GET("/aiops/readiness", handleAIOpsReadiness(deps))
+
 	incidents := group.Group("/aiops/incidents")
 	{
 		incidents.POST("", RequireOperator(), handleCreateIncident(deps.svc, deps.workflow))
@@ -74,6 +85,20 @@ func registerAIOpsRoutes(group *gin.RouterGroup, deps aiopsRoutesDeps) {
 				RequireAdmin(),
 				handleRollbackRemediation(deps.svc, deps.remediation))
 		}
+	}
+}
+
+func handleAIOpsReadiness(deps aiopsRoutesDeps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		modelConfigured, model := deps.workflow.ModelStatus()
+		c.JSON(http.StatusOK, response.Success(aiopsReadinessResponse{
+			ModelConfigured:             modelConfigured,
+			Model:                       model,
+			ConfigurationSource:         "environment",
+			RuntimeMutable:              false,
+			DeterministicRolesAvailable: true,
+			RemediationAvailable:        deps.remediation != nil,
+		}))
 	}
 }
 
@@ -121,7 +146,10 @@ func handleCreateIncident(svc *aiops.Service, wf *aiops.Workflow) gin.HandlerFun
 
 func handleListIncidents(svc *aiops.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		items, err := svc.List(c.Request.Context(), aiops.IncidentFilter{})
+		items, err := svc.List(c.Request.Context(), aiops.IncidentFilter{
+			Status:    aiops.Status(strings.TrimSpace(c.Query("status"))),
+			Namespace: strings.TrimSpace(c.Query("namespace")),
+		})
 		if err != nil {
 			log.Printf("LIST_INCIDENTS_FAILED: %v", err)
 			c.JSON(http.StatusInternalServerError, response.Failure("LIST_INCIDENTS_FAILED", "查询事件列表失败"))

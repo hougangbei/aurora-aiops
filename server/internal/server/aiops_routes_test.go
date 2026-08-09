@@ -245,6 +245,67 @@ func TestListIncidentsRoute_Empty(t *testing.T) {
 	}
 }
 
+func TestAIOpsReadinessRoute_ReportsUnconfiguredRuntime(t *testing.T) {
+	router, _, cookie := newTestRouter(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/aiops/readiness", nil)
+	req.Header.Set("Cookie", cookie)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body=%s", w.Code, w.Body.String())
+	}
+
+	var env responseEnvelope
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	var readiness map[string]any
+	if err := json.Unmarshal(env.Data, &readiness); err != nil {
+		t.Fatalf("unmarshal readiness: %v", err)
+	}
+	if readiness["modelConfigured"] != false {
+		t.Fatalf("modelConfigured=%v want false", readiness["modelConfigured"])
+	}
+	if readiness["configurationSource"] != "environment" {
+		t.Fatalf("configurationSource=%v want environment", readiness["configurationSource"])
+	}
+	if readiness["runtimeMutable"] != false {
+		t.Fatalf("runtimeMutable=%v want false", readiness["runtimeMutable"])
+	}
+	if readiness["deterministicRolesAvailable"] != true {
+		t.Fatalf("deterministicRolesAvailable=%v want true", readiness["deterministicRolesAvailable"])
+	}
+}
+
+func TestAIOpsReadinessHandler_ReportsConfiguredModelWithoutSecrets(t *testing.T) {
+	wf := aiops.NewWorkflow(aiops.WorkflowOptions{ModelConfigured: true, Model: "aurora-model"})
+	router := gin.New()
+	router.GET("/readiness", handleAIOpsReadiness(aiopsRoutesDeps{workflow: wf}))
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/readiness", nil))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body=%s", w.Code, w.Body.String())
+	}
+	var env responseEnvelope
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	var readiness map[string]any
+	if err := json.Unmarshal(env.Data, &readiness); err != nil {
+		t.Fatalf("unmarshal readiness: %v", err)
+	}
+	if readiness["modelConfigured"] != true || readiness["model"] != "aurora-model" {
+		t.Fatalf("unexpected model readiness: %v", readiness)
+	}
+	if strings.Contains(w.Body.String(), "apiKey") || strings.Contains(w.Body.String(), "baseUrl") {
+		t.Fatalf("readiness response leaked model endpoint details: %s", w.Body.String())
+	}
+}
+
 func TestListIncidentsRoute_AfterCreate(t *testing.T) {
 	router, _, cookie := newTestRouter(t)
 
@@ -278,6 +339,68 @@ func TestListIncidentsRoute_AfterCreate(t *testing.T) {
 	}
 	if len(items) < 1 {
 		t.Errorf("expected at least 1 incident, got %d", len(items))
+	}
+}
+
+func TestListIncidentsRoute_FiltersByStatus(t *testing.T) {
+	router, _, cookie := newTestRouter(t)
+
+	createBody := `{"summary":"Pod OOMKilled","severity":"warning","namespace":"monitoring","resourceKind":"Pod","resourceName":"prometheus-0"}`
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/aiops/incidents", strings.NewReader(createBody))
+	createReq.Header.Set("Cookie", cookie)
+	createReq.Header.Set("Content-Type", "application/json")
+	createW := httptest.NewRecorder()
+	router.ServeHTTP(createW, createReq)
+	if createW.Code != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d", createW.Code)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/aiops/incidents?status=awaiting_approval", nil)
+	listReq.Header.Set("Cookie", cookie)
+	listW := httptest.NewRecorder()
+	router.ServeHTTP(listW, listReq)
+
+	if listW.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body=%s", listW.Code, listW.Body.String())
+	}
+
+	var env responseEnvelope
+	if err := json.Unmarshal(listW.Body.Bytes(), &env); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if dataStr := strings.TrimSpace(string(env.Data)); dataStr != "[]" {
+		t.Fatalf("expected status filter to exclude received incident, got %s", dataStr)
+	}
+}
+
+func TestListIncidentsRoute_FiltersByNamespace(t *testing.T) {
+	router, _, cookie := newTestRouter(t)
+
+	createBody := `{"summary":"Pod OOMKilled","severity":"warning","namespace":"monitoring","resourceKind":"Pod","resourceName":"prometheus-0"}`
+	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/aiops/incidents", strings.NewReader(createBody))
+	createReq.Header.Set("Cookie", cookie)
+	createReq.Header.Set("Content-Type", "application/json")
+	createW := httptest.NewRecorder()
+	router.ServeHTTP(createW, createReq)
+	if createW.Code != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d", createW.Code)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/aiops/incidents?namespace=default", nil)
+	listReq.Header.Set("Cookie", cookie)
+	listW := httptest.NewRecorder()
+	router.ServeHTTP(listW, listReq)
+
+	if listW.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d; body=%s", listW.Code, listW.Body.String())
+	}
+
+	var env responseEnvelope
+	if err := json.Unmarshal(listW.Body.Bytes(), &env); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if dataStr := strings.TrimSpace(string(env.Data)); dataStr != "[]" {
+		t.Fatalf("expected namespace filter to exclude monitoring incident, got %s", dataStr)
 	}
 }
 

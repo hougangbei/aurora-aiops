@@ -35,6 +35,30 @@ export type CreateIncidentInput = {
   resourceName: string;
 };
 
+export type AIOpsReadiness = {
+  modelConfigured: boolean;
+  model: string;
+  configurationSource: 'environment';
+  runtimeMutable: boolean;
+  deterministicRolesAvailable: boolean;
+  remediationAvailable: boolean;
+};
+
+export type ClusterConnection = {
+  state: 'connected' | 'degraded' | 'unreachable';
+  currentContext?: string;
+  serverHost?: string;
+  version: string;
+  latencyMs: number;
+  checkedAt?: string;
+  capabilities: {
+    nodes: boolean;
+    events: boolean;
+    podLogs: boolean;
+    metrics: boolean;
+  };
+};
+
 export type EvidenceNodeKind = 'snapshot' | 'event' | 'log' | 'metric' | 'agent' | 'system';
 
 export type EvidenceNode = {

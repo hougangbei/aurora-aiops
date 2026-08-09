@@ -92,6 +92,14 @@ func (r *Repository) UpdateServer(ctx context.Context, server Server, credential
 		replacement := cloneStoredCredential(*credential)
 		credentialID = replacement.ID
 		if replacement.ID == oldCredentialID {
+			var referenceCount int
+			if err := tx.QueryRowContext(ctx, `
+SELECT COUNT(*) FROM asset_servers WHERE credential_id = ?`, oldCredentialID).Scan(&referenceCount); err != nil {
+				return Server{}, fmt.Errorf("update server count credential references: %w", err)
+			}
+			if referenceCount > 1 {
+				return Server{}, fmt.Errorf("update server credential %q is shared: %w", oldCredentialID, ErrInvalidInput)
+			}
 			result, err := tx.ExecContext(ctx, `
 UPDATE asset_credentials
 SET auth_type = ?, nonce = ?, ciphertext = ?, key_version = ?, created_at = ?, updated_at = ?
@@ -304,20 +312,30 @@ VALUES (?, ?, ?, ?, ?, ?, ?)`, snapshot.ID, item.Category, item.Name, item.Versi
 		}
 	}
 
-	result, err := tx.ExecContext(ctx, `
+	var authoritativeSnapshotID string
+	if err := tx.QueryRowContext(ctx, `
+SELECT id FROM asset_snapshots
+WHERE server_id = ?
+ORDER BY collected_at DESC, id DESC
+LIMIT 1`, server.ID).Scan(&authoritativeSnapshotID); err != nil {
+		return fmt.Errorf("save collection find authoritative snapshot: %w", err)
+	}
+	if authoritativeSnapshotID == snapshot.ID {
+		result, err := tx.ExecContext(ctx, `
 UPDATE asset_servers SET
 	os_family = ?, os_version = ?, architecture = ?, cpu_cores = ?, memory_bytes = ?, disk_bytes = ?,
 	status = ?, status_message = '', last_seen_at = ?, last_collected_at = ?, updated_at = ?
 WHERE id = ?`, snapshot.OSFamily, snapshot.OSVersion, snapshot.Architecture, snapshot.CPUCores,
-		snapshot.MemoryBytes, snapshot.DiskBytes, ServerOnline, formatRepositoryTime(snapshot.CollectedAt),
-		formatRepositoryTime(snapshot.CollectedAt), formatRepositoryTime(snapshot.CollectedAt), server.ID)
-	if err != nil {
-		return fmt.Errorf("save collection update server summary: %w", err)
-	}
-	if affected, err := result.RowsAffected(); err != nil {
-		return fmt.Errorf("save collection count updated servers: %w", err)
-	} else if affected == 0 {
-		return ErrNotFound
+			snapshot.MemoryBytes, snapshot.DiskBytes, ServerOnline, formatRepositoryTime(snapshot.CollectedAt),
+			formatRepositoryTime(snapshot.CollectedAt), formatRepositoryTime(snapshot.CollectedAt), server.ID)
+		if err != nil {
+			return fmt.Errorf("save collection update server summary: %w", err)
+		}
+		if affected, err := result.RowsAffected(); err != nil {
+			return fmt.Errorf("save collection count updated servers: %w", err)
+		} else if affected == 0 {
+			return ErrNotFound
+		}
 	}
 
 	if _, err := tx.ExecContext(ctx, `

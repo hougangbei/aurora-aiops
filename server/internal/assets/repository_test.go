@@ -334,6 +334,85 @@ func TestRepositorySaveCollectionRejectsMismatchedServerOwnership(t *testing.T) 
 	}
 }
 
+func TestRepositoryStaleCollectionDoesNotReplaceLatestInventoryOrServerState(t *testing.T) {
+	ctx := context.Background()
+	db := openRepositoryDB(t)
+	repo := NewRepository(db)
+	base := time.Date(2026, 8, 9, 12, 45, 0, 0, time.UTC)
+	server := repositoryServer("server-1", "edge-1", "credential-1", base)
+	if _, err := repo.CreateServer(ctx, server, repositoryCredential(server.CredentialID, AuthPassword, base)); err != nil {
+		t.Fatal(err)
+	}
+
+	newer := Snapshot{
+		ID:           "snapshot-newer",
+		ServerID:     server.ID,
+		OSFamily:     "new-linux",
+		OSVersion:    "new-version",
+		Architecture: "new-arch",
+		CPUCores:     32,
+		MemoryBytes:  64 << 30,
+		DiskBytes:    500 << 30,
+		CollectedAt:  base.Add(2 * time.Minute),
+	}
+	newerSoftware := []SoftwareItem{{Category: "runtime", Name: "newer-package", Architecture: "amd64"}}
+	if err := repo.SaveCollection(ctx, server, newer, newerSoftware); err != nil {
+		t.Fatal(err)
+	}
+	failureAt := base.Add(3 * time.Minute)
+	if err := repo.MarkCollectionFailure(ctx, server.ID, ServerOffline, "failure after newest success", failureAt); err != nil {
+		t.Fatal(err)
+	}
+	wantServer, err := repo.GetServer(ctx, server.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	older := Snapshot{
+		ID:           "snapshot-older",
+		ServerID:     server.ID,
+		OSFamily:     "old-linux",
+		OSVersion:    "old-version",
+		Architecture: "old-arch",
+		CPUCores:     1,
+		MemoryBytes:  1 << 30,
+		DiskBytes:    10 << 30,
+		CollectedAt:  base.Add(time.Minute),
+	}
+	if err := repo.SaveCollection(ctx, server, older, []SoftwareItem{{Category: "runtime", Name: "older-package", Architecture: "arm64"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	latest, err := repo.LatestSnapshot(ctx, server.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(latest, newer) {
+		t.Fatalf("latest snapshot=%+v want newer %+v", latest, newer)
+	}
+	items, err := repo.ListLatestSoftware(ctx, server.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(items, newerSoftware) {
+		t.Fatalf("latest software=%+v want %+v", items, newerSoftware)
+	}
+	gotServer, err := repo.GetServer(ctx, server.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(gotServer, wantServer) {
+		t.Fatalf("stale collection replaced server state:\n got %+v\nwant %+v", gotServer, wantServer)
+	}
+	var snapshotCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM asset_snapshots WHERE server_id = ?`, server.ID).Scan(&snapshotCount); err != nil {
+		t.Fatal(err)
+	}
+	if snapshotCount != 2 {
+		t.Fatalf("snapshot count=%d want retained newer and older rows", snapshotCount)
+	}
+}
+
 func TestRepositoryRetainsNewestThirtySuccessfulSnapshots(t *testing.T) {
 	ctx := context.Background()
 	db := openRepositoryDB(t)
@@ -374,40 +453,55 @@ func TestRepositoryRetainsNewestThirtySuccessfulSnapshots(t *testing.T) {
 }
 
 func TestRepositoryLatestSnapshotUsesIDDescendingForTimestampTie(t *testing.T) {
-	ctx := context.Background()
-	db := openRepositoryDB(t)
-	repo := NewRepository(db)
-	base := time.Date(2026, 8, 9, 13, 15, 0, 0, time.UTC)
-	server := repositoryServer("server-1", "edge-1", "credential-1", base)
-	if _, err := repo.CreateServer(ctx, server, repositoryCredential(server.CredentialID, AuthPassword, base)); err != nil {
-		t.Fatal(err)
-	}
 	for _, tc := range []struct {
-		id       string
-		software string
+		name  string
+		order []string
 	}{
-		{id: "snapshot-a", software: "from-a"},
-		{id: "snapshot-z", software: "from-z"},
+		{name: "higher ID inserted last", order: []string{"snapshot-a", "snapshot-z"}},
+		{name: "higher ID inserted first", order: []string{"snapshot-z", "snapshot-a"}},
 	} {
-		snapshot := Snapshot{ID: tc.id, ServerID: server.ID, CollectedAt: base.Add(time.Minute)}
-		if err := repo.SaveCollection(ctx, server, snapshot, []SoftwareItem{{Category: "runtime", Name: tc.software}}); err != nil {
-			t.Fatalf("SaveCollection %s: %v", tc.id, err)
-		}
-	}
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			db := openRepositoryDB(t)
+			repo := NewRepository(db)
+			base := time.Date(2026, 8, 9, 13, 15, 0, 0, time.UTC)
+			server := repositoryServer("server-1", "edge-1", "credential-1", base)
+			if _, err := repo.CreateServer(ctx, server, repositoryCredential(server.CredentialID, AuthPassword, base)); err != nil {
+				t.Fatal(err)
+			}
+			snapshots := map[string]Snapshot{
+				"snapshot-a": {ID: "snapshot-a", ServerID: server.ID, OSFamily: "from-a", CPUCores: 1, CollectedAt: base.Add(time.Minute)},
+				"snapshot-z": {ID: "snapshot-z", ServerID: server.ID, OSFamily: "from-z", CPUCores: 64, CollectedAt: base.Add(time.Minute)},
+			}
+			for _, id := range tc.order {
+				snapshot := snapshots[id]
+				if err := repo.SaveCollection(ctx, server, snapshot, []SoftwareItem{{Category: "runtime", Name: "software-" + id}}); err != nil {
+					t.Fatalf("SaveCollection %s: %v", id, err)
+				}
+			}
 
-	latest, err := repo.LatestSnapshot(ctx, server.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if latest.ID != "snapshot-z" {
-		t.Fatalf("latest snapshot=%q want snapshot-z", latest.ID)
-	}
-	items, err := repo.ListLatestSoftware(ctx, server.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(items) != 1 || items[0].Name != "from-z" {
-		t.Fatalf("latest software=%+v want snapshot-z software", items)
+			latest, err := repo.LatestSnapshot(ctx, server.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if latest.ID != "snapshot-z" {
+				t.Fatalf("latest snapshot=%q want snapshot-z", latest.ID)
+			}
+			items, err := repo.ListLatestSoftware(ctx, server.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(items) != 1 || items[0].Name != "software-snapshot-z" {
+				t.Fatalf("latest software=%+v want snapshot-z software", items)
+			}
+			gotServer, err := repo.GetServer(ctx, server.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if gotServer.OSFamily != "from-z" || gotServer.CPUCores != 64 {
+				t.Fatalf("server summary=%+v want snapshot-z summary", gotServer)
+			}
+		})
 	}
 }
 
@@ -623,6 +717,108 @@ VALUES (?, ?, ?, ?, ?, ?, ?)`, "installation-1", first.ID, "project-1", "1.0", "
 	}
 	if _, err := repo.GetCredential(ctx, first.CredentialID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("shared credential after final delete error=%v want ErrNotFound", err)
+	}
+}
+
+func TestRepositoryUpdateSharedCredentialRequiresCopyOnWrite(t *testing.T) {
+	ctx := context.Background()
+	db := openRepositoryDB(t)
+	repo := NewRepository(db)
+	base := time.Date(2026, 8, 9, 16, 30, 0, 0, time.UTC)
+	first := repositoryServer("server-1", "edge-1", "credential-c1", base)
+	if _, err := repo.CreateServer(ctx, first, repositoryCredential(first.CredentialID, AuthPassword, base)); err != nil {
+		t.Fatal(err)
+	}
+	second := repositoryServer("server-2", "edge-2", first.CredentialID, base.Add(time.Second))
+	if _, err := db.Exec(`
+INSERT INTO asset_servers (id, name, address, ssh_port, username, credential_id, status, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, second.ID, second.Name, second.Address, second.SSHPort,
+		second.Username, second.CredentialID, second.Status, formatRepositoryTime(second.CreatedAt),
+		formatRepositoryTime(second.UpdatedAt)); err != nil {
+		t.Fatalf("seed shared-credential server: %v", err)
+	}
+	firstBefore, err := repo.GetServer(ctx, first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondBefore, err := repo.GetServer(ctx, second.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c1Before, err := repo.GetCredential(ctx, first.CredentialID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sharedSameID := repositoryCredential(first.CredentialID, AuthPrivateKey, base.Add(time.Minute))
+	sharedSameID.Envelope = CredentialEnvelope{Nonce: []byte("forbidden-nonce"), Ciphertext: []byte("forbidden-ciphertext"), KeyVersion: 99}
+	firstBefore.Username = "must-not-update"
+	if _, err := repo.UpdateServer(ctx, firstBefore, &sharedSameID); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("shared same-ID update error=%v want ErrInvalidInput", err)
+	}
+	firstAfterRejected, err := repo.GetServer(ctx, first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondAfterRejected, err := repo.GetServer(ctx, second.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c1AfterRejected, err := repo.GetCredential(ctx, first.CredentialID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstBefore.Username = "root"
+	if !reflect.DeepEqual(firstAfterRejected, firstBefore) || !reflect.DeepEqual(secondAfterRejected, secondBefore) || !reflect.DeepEqual(c1AfterRejected, c1Before) {
+		t.Fatalf("rejected shared credential update changed state:\nfirst %+v\nsecond %+v\ncredential %+v", firstAfterRejected, secondAfterRejected, c1AfterRejected)
+	}
+
+	c2 := repositoryCredential("credential-c2", AuthPrivateKey, base.Add(2*time.Minute))
+	firstForCopy := firstAfterRejected
+	firstForCopy.UpdatedAt = c2.UpdatedAt
+	firstWithC2, err := repo.UpdateServer(ctx, firstForCopy, &c2)
+	if err != nil {
+		t.Fatalf("copy-on-write credential update: %v", err)
+	}
+	if firstWithC2.CredentialID != c2.ID || firstWithC2.CredentialAuthType != c2.AuthType {
+		t.Fatalf("first server did not move to c2: %+v", firstWithC2)
+	}
+	if _, err := repo.GetCredential(ctx, c1Before.ID); err != nil {
+		t.Fatalf("c1 removed while second server still references it: %v", err)
+	}
+	secondAfterCopy, err := repo.GetServer(ctx, second.ID)
+	if err != nil || secondAfterCopy.CredentialID != c1Before.ID || secondAfterCopy.CredentialAuthType != c1Before.AuthType {
+		t.Fatalf("second server changed during copy-on-write: %+v err=%v", secondAfterCopy, err)
+	}
+
+	c2SameID := repositoryCredential(c2.ID, AuthPassword, base.Add(3*time.Minute))
+	c2SameID.Envelope = CredentialEnvelope{Nonce: []byte("sole-nonce"), Ciphertext: []byte("sole-ciphertext"), KeyVersion: 3}
+	firstWithC2.UpdatedAt = c2SameID.UpdatedAt
+	firstWithUpdatedC2, err := repo.UpdateServer(ctx, firstWithC2, &c2SameID)
+	if err != nil {
+		t.Fatalf("sole-reference same-ID update: %v", err)
+	}
+	if firstWithUpdatedC2.CredentialAuthType != AuthPassword {
+		t.Fatalf("sole-reference auth type=%q want %q", firstWithUpdatedC2.CredentialAuthType, AuthPassword)
+	}
+	storedC2, err := repo.GetCredential(ctx, c2.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(storedC2, c2SameID) {
+		t.Fatalf("stored c2=%+v want %+v", storedC2, c2SameID)
+	}
+
+	c3 := repositoryCredential("credential-c3", AuthPrivateKey, base.Add(4*time.Minute))
+	firstWithUpdatedC2.UpdatedAt = c3.UpdatedAt
+	if _, err := repo.UpdateServer(ctx, firstWithUpdatedC2, &c3); err != nil {
+		t.Fatalf("replace sole-reference c2 with c3: %v", err)
+	}
+	if _, err := repo.GetCredential(ctx, c2.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unreferenced c2 error=%v want ErrNotFound", err)
+	}
+	if _, err := repo.GetCredential(ctx, c1Before.ID); err != nil {
+		t.Fatalf("shared c1 removed after unrelated replacement: %v", err)
 	}
 }
 

@@ -264,3 +264,4 @@ aurora-aiops
 
 - [产品方案与需求基线](docs/产品方案与需求基线.md)
 - [开发与实验集群操作指南](docs/operation-guide.md)
+- [资产盘点后端基础开发参考](docs/architecture/asset-inventory-development.md)

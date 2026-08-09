@@ -19,6 +19,8 @@ var operatorWritePaths = map[string]struct{}{
 	http.MethodPost + " /api/v1/aiops/incidents/:id/approve-remediation": {},
 	http.MethodPost + " /api/v1/aiops/incidents/:id/reject-remediation":  {},
 	http.MethodPost + " /api/v1/cluster/connection/test":                 {},
+	http.MethodPost + " /api/v1/assets/servers/:id/test-connection":      {},
+	http.MethodPost + " /api/v1/assets/servers/:id/collect":              {},
 }
 
 // requiredPlatformRoles returns the roles permitted to handle a request, or nil

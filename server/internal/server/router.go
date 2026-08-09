@@ -19,6 +19,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/hougangbei/aurora-aiops/server/internal/aiops"
+	"github.com/hougangbei/aurora-aiops/server/internal/assets"
 	"github.com/hougangbei/aurora-aiops/server/internal/auth"
 	"github.com/hougangbei/aurora-aiops/server/internal/buildinfo"
 	"github.com/hougangbei/aurora-aiops/server/internal/cluster"
@@ -73,6 +74,7 @@ func newRouter(
 	clusterService *service.ClusterService,
 	probe *cluster.Probe,
 	authService *auth.Service,
+	assetService *assets.Service,
 	updateService *service.UpdateService,
 	systemLockService *service.SystemOperationLockService,
 	aiopsService *aiops.Service,
@@ -252,6 +254,7 @@ func newRouter(
 			})
 			registerClusterRoutes(authorized, probe, clusterService)
 			registerExperimentRoutes(authorized, experimentRepo)
+			registerAssetRoutes(authorized, assetService)
 
 			{
 				authorized.GET("/system/update-status", func(c *gin.Context) {

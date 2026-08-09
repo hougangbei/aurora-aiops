@@ -43,7 +43,7 @@ type Server struct {
 	Name                 string
 	Address              string
 	Username             string
-	CredentialID         string
+	CredentialID         string `json:"-"`
 	HostKeyFingerprint   string
 	SSHPort              int
 	Status               ServerStatus
@@ -79,6 +79,12 @@ type UpdateServerInput struct {
 	SSHPort  int
 	AuthType *CredentialAuthType
 	Secret   *CredentialSecret
+}
+
+type ConnectionResult struct {
+	Fingerprint string `json:"fingerprint"`
+	Trusted     bool   `json:"trusted"`
+	Changed     bool   `json:"changed"`
 }
 
 type Snapshot struct {

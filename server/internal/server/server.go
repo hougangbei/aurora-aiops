@@ -3,11 +3,13 @@ package server
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/hougangbei/aurora-aiops/server/internal/aiops"
+	"github.com/hougangbei/aurora-aiops/server/internal/assets"
 	"github.com/hougangbei/aurora-aiops/server/internal/audit"
 	"github.com/hougangbei/aurora-aiops/server/internal/auth"
 	"github.com/hougangbei/aurora-aiops/server/internal/buildinfo"
@@ -89,6 +91,11 @@ func Run(info buildinfo.Info) error {
 	})
 
 	auditRepo := audit.NewRepository(db)
+	assetRemote := assets.NewSSHTransport(cfg.Cluster.Timeout)
+	assetService, err := buildAssetService(db, cfg.Asset.EncryptionKey, assetRemote, auditRepo, time.Now)
+	if err != nil {
+		return fmt.Errorf("initialize asset service: %w", err)
+	}
 	snapshotStore := remediation.NewSnapshotStore(db)
 	executor := remediation.NewExecutor(
 		&remediation.KubeExecutorClient{Client: sharedClient.Kubernetes, RolloutTimeout: cfg.Cluster.Timeout},
@@ -115,6 +122,7 @@ func Run(info buildinfo.Info) error {
 		clusterService,
 		probe,
 		authService,
+		assetService,
 		updateService,
 		systemLockService,
 		aiopsService,
@@ -125,6 +133,28 @@ func Run(info buildinfo.Info) error {
 		info,
 	)
 	return router.Run(cfg.HTTPAddr)
+}
+
+func buildAssetService(db *sql.DB, encryptionKey []byte, remote assets.RemoteTransport, auditRepo audit.Repository, now func() time.Time) (*assets.Service, error) {
+	var cipher assets.CredentialCipher
+	if len(encryptionKey) == 0 {
+		var credentialCount int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM asset_credentials`).Scan(&credentialCount); err != nil {
+			return nil, errors.New("inspect asset credential configuration")
+		}
+		if credentialCount > 0 {
+			return nil, errors.New("asset credential encryption key is required for existing credentials")
+		}
+	} else {
+		var err error
+		cipher, err = assets.NewAESGCMCredentialCipher(encryptionKey)
+		if err != nil {
+			return nil, errors.New("initialize asset credential encryption")
+		}
+	}
+	repo := assets.NewRepository(db)
+	collector := assets.NewCollector(remote, now)
+	return assets.NewService(repo, cipher, remote, collector, auditRepo, now), nil
 }
 
 // buildLLMClient constructs the model client from config. An empty BaseURL

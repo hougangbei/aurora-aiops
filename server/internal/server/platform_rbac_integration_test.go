@@ -18,6 +18,7 @@ import (
 	metricsfake "k8s.io/metrics/pkg/client/clientset/versioned/fake"
 
 	"github.com/hougangbei/aurora-aiops/server/internal/aiops"
+	"github.com/hougangbei/aurora-aiops/server/internal/assets"
 	"github.com/hougangbei/aurora-aiops/server/internal/audit"
 	"github.com/hougangbei/aurora-aiops/server/internal/auth"
 	"github.com/hougangbei/aurora-aiops/server/internal/buildinfo"
@@ -33,7 +34,7 @@ import (
 // newPlatformRBACRouter builds the full production router with platform auth,
 // the EnforcePlatformRBAC middleware, and every /api/v1 route registered, so the
 // role matrix and route-inventory tests exercise real route registrations.
-func newPlatformRBACRouter(t *testing.T) (*gin.Engine, *auth.Service, string) {
+func newPlatformRBACRouter(t *testing.T) (*gin.Engine, *auth.Service, string, string, *assetRouteRemote) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
@@ -84,6 +85,20 @@ func newPlatformRBACRouter(t *testing.T) (*gin.Engine, *auth.Service, string) {
 	})
 
 	auditRepo := audit.NewRepository(db)
+	assetCipher, err := assets.NewAESGCMCredentialCipher([]byte("0123456789abcdef0123456789abcdef"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assetRemote := &assetRouteRemote{}
+	assetNow := func() time.Time { return time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC) }
+	assetService := assets.NewService(assets.NewRepository(db), assetCipher, assetRemote, assets.NewCollector(assetRemote, assetNow), auditRepo, assetNow)
+	seedAsset, err := assetService.Create(context.Background(), "admin", assets.CreateServerInput{
+		Name: "rbac-seed", Address: "192.0.2.20", Username: "root", AuthType: assets.AuthPassword,
+		Secret: assets.CredentialSecret{Password: "rbac-seed-password"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	snapshotStore := remediation.NewSnapshotStore(db)
 	executor := remediation.NewExecutor(
 		&remediation.KubeExecutorClient{Client: kubeClient, RolloutTimeout: time.Second},
@@ -103,6 +118,7 @@ func newPlatformRBACRouter(t *testing.T) (*gin.Engine, *auth.Service, string) {
 		clusterService,
 		nil, // probe is only invoked on connection requests, which these tests never send
 		authService,
+		assetService,
 		updateService,
 		systemLockService,
 		aiopsService,
@@ -112,7 +128,7 @@ func newPlatformRBACRouter(t *testing.T) (*gin.Engine, *auth.Service, string) {
 		experiment.NewRunRepository(db),
 		buildinfo.Info{},
 	)
-	return router, authService, secretReadMarker
+	return router, authService, secretReadMarker, seedAsset.ID, assetRemote
 }
 
 func rbacCookie(t *testing.T, router *gin.Engine, username string) *http.Cookie {
@@ -141,7 +157,7 @@ func doRequest(t *testing.T, router *gin.Engine, method, path, body, cookieUser 
 const validExperimentRunBody = `{"id":"r1","group":"rules","seed":1,"scenario":"dns","expectedRootCause":"dns","top1Correct":true,"top3Contains":true,"mttdSeconds":1.0,"evidenceCompleteness":1.0,"highRiskIntercepted":true,"tokensUsed":100}`
 
 func TestPlatformRBACRoleMatrix(t *testing.T) {
-	router, _, _ := newPlatformRBACRouter(t)
+	router, _, _, assetID, assetRemote := newPlatformRBACRouter(t)
 
 	cases := []struct {
 		name     string
@@ -158,6 +174,11 @@ func TestPlatformRBACRoleMatrix(t *testing.T) {
 		{"operator cannot record experiment run", http.MethodPost, "/api/v1/experiments/runs", validExperimentRunBody, "operator", http.StatusForbidden},
 		{"admin records experiment run", http.MethodPost, "/api/v1/experiments/runs", validExperimentRunBody, "admin", http.StatusCreated},
 		{"viewer reads experiment metrics", http.MethodGet, "/api/v1/experiments/metrics", "", "viewer", http.StatusOK},
+		{"viewer lists assets", http.MethodGet, "/api/v1/assets/servers", "", "viewer", http.StatusOK},
+		{"viewer cannot collect asset", http.MethodPost, "/api/v1/assets/servers/" + assetID + "/collect", "", "viewer", http.StatusForbidden},
+		{"operator collect reaches handler", http.MethodPost, "/api/v1/assets/servers/" + assetID + "/collect", "", "operator", http.StatusInternalServerError},
+		{"operator cannot create asset", http.MethodPost, "/api/v1/assets/servers", validAssetCreateBody(false), "operator", http.StatusForbidden},
+		{"admin creates asset", http.MethodPost, "/api/v1/assets/servers", strings.Replace(validAssetCreateBody(false), "edge-1", "rbac-admin-created", 1), "admin", http.StatusCreated},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -167,10 +188,13 @@ func TestPlatformRBACRoleMatrix(t *testing.T) {
 			}
 		})
 	}
+	if assetRemote.runCalls == 0 {
+		t.Fatal("operator collect did not reach the asset collector handler")
+	}
 }
 
 func TestViewerSecretYAMLDoesNotInvokeKubectl(t *testing.T) {
-	router, _, marker := newPlatformRBACRouter(t)
+	router, _, marker, _, _ := newPlatformRBACRouter(t)
 
 	viewer := doRequest(t, router, http.MethodGet, "/api/v1/secrets/default/app/yaml", "", "viewer")
 	if viewer.Code != http.StatusForbidden {
@@ -261,7 +285,7 @@ func TestEnforcePlatformRBACDefaultAdmin(t *testing.T) {
 }
 
 func TestPlatformRBACClassifiesEveryRegisteredRoute(t *testing.T) {
-	router, _, _ := newPlatformRBACRouter(t)
+	router, _, _, _, _ := newPlatformRBACRouter(t)
 
 	const (
 		login  = "/api/v1/auth/login"

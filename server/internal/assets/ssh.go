@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"net"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -23,7 +24,10 @@ const (
 	maxSSHOutputBytes     = int64(16 << 20)
 	maxSSHUploadBytes     = int64(1 << 30)
 	maxSSHEmptyReads      = 100
+	maxSSHUploadStderr    = int64(4 << 10)
 )
+
+var errHostKeyObserved = errors.New("ssh host key observed")
 
 type RemoteTarget struct {
 	Address             string
@@ -101,7 +105,7 @@ func (t *SSHTransport) ProbeHostKey(ctx context.Context, target RemoteTarget) (s
 				}
 				return hostKeyErr
 			default:
-				return nil
+				return errHostKeyObserved
 			}
 		},
 	}
@@ -115,13 +119,10 @@ func (t *SSHTransport) ProbeHostKey(ctx context.Context, target RemoteTarget) (s
 	if hostKeyErr != nil {
 		return actual, hostKeyErr
 	}
-	// Reaching user authentication proves that key exchange and the pinned host
-	// key check completed. ProbeHostKey intentionally has no user credential, so
-	// an authentication failure after that point is a successful probe.
-	if actual != "" {
+	if actual == target.ExpectedFingerprint && errors.Is(err, errHostKeyObserved) {
 		return actual, nil
 	}
-	return "", err
+	return actual, err
 }
 
 func (t *SSHTransport) Run(ctx context.Context, target RemoteTarget, secret CredentialSecret, command string, outputLimit int64) (CommandResult, error) {
@@ -206,6 +207,14 @@ func (t *SSHTransport) Upload(ctx context.Context, target RemoteTarget, secret C
 	if err != nil {
 		return err
 	}
+	spooled, err := spoolUploadSource(ctx, source, size)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = spooled.Close()
+		_ = os.Remove(spooled.Name())
+	}()
 
 	client, err := t.dial(ctx, target, verifiedClientConfig(target, auth))
 	if err != nil {
@@ -227,12 +236,14 @@ func (t *SSHTransport) Upload(ctx context.Context, target RemoteTarget, secret C
 	}
 	defer session.Close()
 	session.Stdout = io.Discard
-	session.Stderr = io.Discard
+	stderrBudget := &combinedOutputBudget{remaining: maxSSHUploadStderr}
+	stderr := &boundedOutputWriter{budget: stderrBudget}
+	session.Stderr = stderr
 	stdin, err := session.StdinPipe()
 	if err != nil {
 		return fmt.Errorf("open SSH upload stdin: %w", err)
 	}
-	command := fmt.Sprintf("install -m %04o /dev/stdin %s", mode.Perm(), quotePOSIX(destination))
+	command := guardedInstallCommand(destination, mode)
 	if err := session.Start(command); err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return ctxErr
@@ -241,20 +252,113 @@ func (t *SSHTransport) Upload(ctx context.Context, target RemoteTarget, secret C
 	}
 
 	var transferErr error
-	if err := copyUploadExact(ctx, stdin, source, size); err != nil {
+	if err := copyUploadExact(ctx, stdin, spooled, size); err != nil {
 		transferErr = err
-	} else {
-		transferErr = verifyUploadSourceEOF(ctx, source, size)
 	}
 	closeErr := stdin.Close()
 	waitErr := session.Wait()
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return ctxErr
 	}
+	if diagnostic := sanitizeSSHDiagnostic(stderr.String()); waitErr != nil && diagnostic != "" {
+		waitErr = fmt.Errorf("remote install failed: %s: %w", diagnostic, waitErr)
+	}
 	if transferErr != nil || closeErr != nil || waitErr != nil {
 		return errors.Join(transferErr, closeErr, waitErr)
 	}
 	return nil
+}
+
+func spoolUploadSource(ctx context.Context, source io.Reader, declaredSize int64) (*os.File, error) {
+	var stopClose func() bool
+	switch source.(type) {
+	case *bytes.Reader, *bytes.Buffer, *strings.Reader:
+	default:
+		closer, ok := source.(io.ReadCloser)
+		if !ok {
+			return nil, fmt.Errorf("upload source must be an in-memory reader or io.ReadCloser: %w", ErrInvalidInput)
+		}
+		stopClose = context.AfterFunc(ctx, func() { _ = closer.Close() })
+		defer stopClose()
+	}
+
+	temporary, err := os.CreateTemp("", "aurora-aiops-upload-*")
+	if err != nil {
+		return nil, fmt.Errorf("create upload spool: %w", err)
+	}
+	keep := false
+	defer func() {
+		if !keep {
+			_ = temporary.Close()
+			_ = os.Remove(temporary.Name())
+		}
+	}()
+	if err := temporary.Chmod(0o600); err != nil {
+		return nil, fmt.Errorf("secure upload spool: %w", err)
+	}
+	if err := copyUploadExact(ctx, temporary, source, declaredSize); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		return nil, err
+	}
+	if err := verifyUploadSourceEOF(ctx, source, declaredSize); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, ctxErr
+		}
+		return nil, err
+	}
+	if _, err := temporary.Seek(0, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("rewind upload spool: %w", err)
+	}
+	keep = true
+	return temporary, nil
+}
+
+func guardedInstallCommand(destination string, mode fs.FileMode) string {
+	root := "/tmp/aurora-aiops"
+	if strings.HasPrefix(destination, "/opt/aurora-aiops/") {
+		root = "/opt/aurora-aiops"
+	}
+	parent := path.Dir(destination)
+	// The command treats the selected root as a control-plane trust boundary.
+	// Aurora owns that root and its managed descendants: the root must be a real,
+	// uid-0-owned directory without group/other write access before any descendant
+	// path is resolved or installed, preventing unprivileged path replacement.
+	guards := []string{
+		"root=" + quotePOSIX(root),
+		"parent=" + quotePOSIX(parent),
+		"destination=" + quotePOSIX(destination),
+		`[ -d "$root" ]`,
+		`[ ! -L "$root" ]`,
+		`[ "$(stat -c %u -- "$root")" = 0 ]`,
+		`root_mode=$(stat -c %a -- "$root")`,
+		`case "$root_mode" in *[2367][0-7]|*[0-7][2367]) false ;; *) true ;; esac`,
+		`root_resolved=$(readlink -f -- "$root")`,
+		`[ -n "$root_resolved" ]`,
+		`parent_resolved=$(readlink -f -- "$parent")`,
+		`[ -n "$parent_resolved" ]`,
+		`case "$parent_resolved" in "$root_resolved"|"$root_resolved"/*) true ;; *) false ;; esac`,
+		`[ ! -L "$destination" ]`,
+		fmt.Sprintf("install -m %04o /dev/stdin %s", mode.Perm(), quotePOSIX(destination)),
+	}
+	return strings.Join(guards, " && ")
+}
+
+func sanitizeSSHDiagnostic(diagnostic string) string {
+	var sanitized strings.Builder
+	sanitized.Grow(int(maxSSHUploadStderr))
+	for _, r := range diagnostic {
+		if unicode.IsControl(r) {
+			r = ' '
+		}
+		previousLength := sanitized.Len()
+		_, _ = sanitized.WriteRune(r)
+		if sanitized.Len() > int(maxSSHUploadStderr) {
+			return strings.TrimSpace(sanitized.String()[:previousLength])
+		}
+	}
+	return strings.TrimSpace(sanitized.String())
 }
 
 func copyUploadExact(ctx context.Context, destination io.Writer, source io.Reader, declaredSize int64) error {

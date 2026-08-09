@@ -36,13 +36,48 @@ type loopbackSSHServer struct {
 	address        string
 	port           int
 	accepted       atomic.Int64
+	authAttempts   atomic.Int64
 	uploadExitCode atomic.Uint32
 
 	mu       sync.Mutex
 	conns    map[net.Conn]struct{}
 	executes []string
 	uploads  [][]byte
+	guard    *loopbackGuardModel
 	wg       sync.WaitGroup
+}
+
+type loopbackGuardModel struct {
+	root               string
+	rootExists         bool
+	rootDirectory      bool
+	rootSymlink        bool
+	rootUID            int
+	rootMode           os.FileMode
+	resolvedParent     string
+	destinationSymlink bool
+	target             []byte
+	diagnostic         string
+}
+
+func trustedLoopbackGuard(root, resolvedParent string) loopbackGuardModel {
+	return loopbackGuardModel{
+		root:           root,
+		rootExists:     true,
+		rootDirectory:  true,
+		rootUID:        0,
+		rootMode:       0o755,
+		resolvedParent: resolvedParent,
+		target:         []byte("original target"),
+		diagnostic:     "guard rejected\x00" + strings.Repeat("z", 5000),
+	}
+}
+
+func (m *loopbackGuardModel) allowsInstall() bool {
+	if !m.rootExists || !m.rootDirectory || m.rootSymlink || m.rootUID != 0 || m.rootMode.Perm()&0o022 != 0 || m.destinationSymlink {
+		return false
+	}
+	return m.resolvedParent == m.root || strings.HasPrefix(m.resolvedParent, m.root+"/")
 }
 
 type transientZeroEOFReader struct {
@@ -65,10 +100,61 @@ func (r *transientZeroEOFReader) Read(p []byte) (int, error) {
 	return 0, io.EOF
 }
 
+func (*transientZeroEOFReader) Close() error { return nil }
+
 type noProgressReader struct{}
 
 func (noProgressReader) Read([]byte) (int, error) {
 	return 0, nil
+}
+
+func (noProgressReader) Close() error { return nil }
+
+type readCloserAdapter struct{ io.Reader }
+
+func (*readCloserAdapter) Close() error { return nil }
+
+type blockingReadCloser struct {
+	started   chan struct{}
+	closed    chan struct{}
+	startOnce sync.Once
+	closeOnce sync.Once
+}
+
+func newBlockingReadCloser() *blockingReadCloser {
+	return &blockingReadCloser{started: make(chan struct{}), closed: make(chan struct{})}
+}
+
+func (r *blockingReadCloser) Read([]byte) (int, error) {
+	r.startOnce.Do(func() { close(r.started) })
+	<-r.closed
+	return 0, errors.New("reader closed")
+}
+
+func (r *blockingReadCloser) Close() error {
+	r.closeOnce.Do(func() { close(r.closed) })
+	return nil
+}
+
+type blockingNonCloserReader struct {
+	started     chan struct{}
+	release     chan struct{}
+	startOnce   sync.Once
+	releaseOnce sync.Once
+}
+
+func newBlockingNonCloserReader() *blockingNonCloserReader {
+	return &blockingNonCloserReader{started: make(chan struct{}), release: make(chan struct{})}
+}
+
+func (r *blockingNonCloserReader) Read([]byte) (int, error) {
+	r.startOnce.Do(func() { close(r.started) })
+	<-r.release
+	return 0, io.EOF
+}
+
+func (r *blockingNonCloserReader) unblock() {
+	r.releaseOnce.Do(func() { close(r.release) })
 }
 
 type partialThenStallReader struct {
@@ -103,6 +189,11 @@ func (r *partialThenStallReader) Read(p []byte) (int, error) {
 
 func (r *partialThenStallReader) stopStalling() {
 	r.releaseOnce.Do(func() { close(r.release) })
+}
+
+func (r *partialThenStallReader) Close() error {
+	r.stopStalling()
+	return nil
 }
 
 func newLoopbackSSHServer(t *testing.T) *loopbackSSHServer {
@@ -198,6 +289,21 @@ func (s *loopbackSSHServer) lastUpload(t *testing.T) []byte {
 	return append([]byte(nil), s.uploads[len(s.uploads)-1]...)
 }
 
+func (s *loopbackSSHServer) setGuardModel(model loopbackGuardModel) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.guard = &model
+}
+
+func (s *loopbackSSHServer) modeledTarget() []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.guard == nil {
+		return nil
+	}
+	return append([]byte(nil), s.guard.target...)
+}
+
 func (s *loopbackSSHServer) serve() {
 	defer s.wg.Done()
 	for {
@@ -223,6 +329,9 @@ func (s *loopbackSSHServer) serveConn(conn net.Conn) {
 		s.mu.Unlock()
 	}()
 	config := &ssh.ServerConfig{
+		AuthLogCallback: func(ssh.ConnMetadata, string, error) {
+			s.authAttempts.Add(1)
+		},
 		PasswordCallback: func(metadata ssh.ConnMetadata, password []byte) (*ssh.Permissions, error) {
 			if metadata.User() == testSSHUser && string(password) == testSSHPassword {
 				return nil, nil
@@ -296,18 +405,67 @@ func (s *loopbackSSHServer) handleSession(channel ssh.Channel, requests <-chan *
 		case "":
 			exitCode = 127
 		default:
-			if strings.HasPrefix(payload.Command, "install ") {
+			if strings.Contains(payload.Command, "install -m ") {
 				contents, _ := io.ReadAll(channel)
 				s.mu.Lock()
-				s.uploads = append(s.uploads, append([]byte(nil), contents...))
+				allowed := true
+				diagnostic := ""
+				if s.guard != nil {
+					if loopbackCommandHasUploadGuards(payload.Command) {
+						allowed = s.guard.allowsInstall()
+					}
+					if allowed {
+						s.guard.target = append([]byte(nil), contents...)
+					} else {
+						diagnostic = s.guard.diagnostic
+					}
+				}
+				if allowed {
+					s.uploads = append(s.uploads, append([]byte(nil), contents...))
+				}
 				s.mu.Unlock()
-				exitCode = s.uploadExitCode.Load()
+				if allowed {
+					exitCode = s.uploadExitCode.Load()
+				} else {
+					_, _ = io.WriteString(channel.Stderr(), diagnostic)
+					exitCode = 73
+				}
 			} else {
 				exitCode = 127
 			}
 		}
 		_, _ = channel.SendRequest("exit-status", false, ssh.Marshal(struct{ Status uint32 }{exitCode}))
 		return
+	}
+}
+
+func loopbackCommandHasUploadGuards(command string) bool {
+	markers := []string{
+		`[ -d "$root" ]`,
+		`[ ! -L "$root" ]`,
+		`stat -c %u -- "$root"`,
+		`stat -c %a -- "$root"`,
+		`case "$root_mode" in *[2367][0-7]|*[0-7][2367])`,
+		`readlink -f -- "$root"`,
+		`readlink -f -- "$parent"`,
+		`[ ! -L "$destination" ]`,
+	}
+	for _, marker := range markers {
+		if !strings.Contains(command, marker) {
+			return false
+		}
+	}
+	return true
+}
+
+func TestSSHTransportSanitizesAndBoundsUploadDiagnostic(t *testing.T) {
+	diagnostic := string(bytes.Repeat([]byte{0xff}, int(maxSSHUploadStderr))) + "\x00\n"
+	got := sanitizeSSHDiagnostic(diagnostic)
+	if len(got) > int(maxSSHUploadStderr) {
+		t.Fatalf("sanitized diagnostic = %d bytes, want <= %d", len(got), maxSSHUploadStderr)
+	}
+	if strings.ContainsAny(got, "\x00\n") {
+		t.Fatalf("sanitized diagnostic contains control characters: %q", got)
 	}
 }
 
@@ -361,6 +519,9 @@ func TestSSHTransportVerifiesPinnedFingerprint(t *testing.T) {
 	if fingerprint != server.fingerprint() {
 		t.Fatalf("fingerprint = %q, want %q", fingerprint, server.fingerprint())
 	}
+	if got := server.authAttempts.Load(); got != 0 {
+		t.Fatalf("probe reached authentication %d times, want 0", got)
+	}
 
 	wrong := "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	actual, err := transport.ProbeHostKey(context.Background(), server.target(wrong))
@@ -374,6 +535,34 @@ func TestSSHTransportVerifiesPinnedFingerprint(t *testing.T) {
 	if !errors.As(err, &hostKeyErr) || hostKeyErr.Expected != wrong || hostKeyErr.Actual != actual || !hostKeyErr.Changed {
 		t.Fatalf("HostKeyError = %#v", hostKeyErr)
 	}
+}
+
+func TestSSHTransportProbeFailsBeforeHostKeyIsObserved(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conn, acceptErr := listener.Accept()
+		if acceptErr == nil {
+			_ = conn.Close()
+		}
+	}()
+	tcpAddress := listener.Addr().(*net.TCPAddr)
+	fingerprint, err := NewSSHTransport(time.Second).ProbeHostKey(context.Background(), RemoteTarget{
+		Address: tcpAddress.IP.String(), Port: tcpAddress.Port, Username: testSSHUser,
+		ExpectedFingerprint: "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+	})
+	if err == nil {
+		t.Fatal("expected pre-host-key disconnect error")
+	}
+	if fingerprint != "" {
+		t.Fatalf("fingerprint = %q, want empty", fingerprint)
+	}
+	<-done
 }
 
 func TestSSHTransportPasswordAuthRunsCommand(t *testing.T) {
@@ -550,9 +739,79 @@ func TestSSHTransportUploadStreamsExactBytesAndQuotesPath(t *testing.T) {
 	if got := server.lastUpload(t); !bytes.Equal(got, payload) {
 		t.Fatalf("uploaded bytes = %q, want %q", got, payload)
 	}
-	wantCommand := "install -m 0750 /dev/stdin '/tmp/aurora-aiops/collector'\"'\"'s binary'"
-	if got := server.lastExecute(t); got != wantCommand {
-		t.Fatalf("exec request = %q, want %q", got, wantCommand)
+	wantSuffix := "install -m 0750 /dev/stdin '/tmp/aurora-aiops/collector'\"'\"'s binary'"
+	if got := server.lastExecute(t); !strings.HasSuffix(got, wantSuffix) {
+		t.Fatalf("exec request = %q, want suffix %q", got, wantSuffix)
+	}
+}
+
+func TestSSHTransportUploadCommandGuardsResolvedTrustedPath(t *testing.T) {
+	server := newLoopbackSSHServer(t)
+	destination := "/tmp/aurora-aiops/child/collector's binary"
+	payload := []byte("guarded")
+	err := NewSSHTransport(time.Second).Upload(
+		context.Background(), server.target(server.fingerprint()), CredentialSecret{Password: testSSHPassword},
+		bytes.NewReader(payload), int64(len(payload)), destination, 0o750,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := server.lastExecute(t)
+	for _, marker := range []string{
+		`root='/tmp/aurora-aiops'`,
+		`parent='/tmp/aurora-aiops/child'`,
+		`destination='/tmp/aurora-aiops/child/collector'"'"'s binary'`,
+		`[ -d "$root" ]`,
+		`[ ! -L "$root" ]`,
+		`stat -c %u -- "$root"`,
+		`stat -c %a -- "$root"`,
+		`case "$root_mode" in *[2367][0-7]|*[0-7][2367])`,
+		`readlink -f -- "$root"`,
+		`readlink -f -- "$parent"`,
+		`case "$parent_resolved" in "$root_resolved"|"$root_resolved"/*)`,
+		`[ ! -L "$destination" ]`,
+		`install -m 0750 /dev/stdin '/tmp/aurora-aiops/child/collector'"'"'s binary'`,
+	} {
+		if !strings.Contains(command, marker) {
+			t.Errorf("command missing guard %q: %s", marker, command)
+		}
+	}
+}
+
+func TestSSHTransportUploadRemoteGuardsPreventTargetMutation(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*loopbackGuardModel)
+	}{
+		{name: "root symlink", mutate: func(model *loopbackGuardModel) { model.rootSymlink = true }},
+		{name: "untrusted owner", mutate: func(model *loopbackGuardModel) { model.rootUID = 1000 }},
+		{name: "untrusted mode", mutate: func(model *loopbackGuardModel) { model.rootMode = 0o777 }},
+		{name: "parent outside root", mutate: func(model *loopbackGuardModel) { model.resolvedParent = "/tmp/attacker" }},
+		{name: "destination symlink", mutate: func(model *loopbackGuardModel) { model.destinationSymlink = true }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			server := newLoopbackSSHServer(t)
+			model := trustedLoopbackGuard("/tmp/aurora-aiops", "/tmp/aurora-aiops/child")
+			test.mutate(&model)
+			server.setGuardModel(model)
+			err := NewSSHTransport(time.Second).Upload(
+				context.Background(), server.target(server.fingerprint()), CredentialSecret{Password: testSSHPassword},
+				strings.NewReader("replacement"), int64(len("replacement")), "/tmp/aurora-aiops/child/target", 0o640,
+			)
+			if err == nil {
+				t.Fatal("expected remote guard failure")
+			}
+			if got := server.modeledTarget(); !bytes.Equal(got, []byte("original target")) {
+				t.Fatalf("modeled target mutated to %q", got)
+			}
+			if strings.ContainsRune(err.Error(), '\x00') {
+				t.Fatalf("remote diagnostic contains control character: %q", err)
+			}
+			if count := strings.Count(err.Error(), "z"); count > 4096 {
+				t.Fatalf("remote diagnostic exceeded 4KiB: %d bytes", count)
+			}
+		})
 	}
 }
 
@@ -573,19 +832,19 @@ func TestSSHTransportUploadToleratesTransientZeroReadAtEOF(t *testing.T) {
 	if got := server.lastUpload(t); !bytes.Equal(got, payload) {
 		t.Fatalf("uploaded bytes = %q, want %q", got, payload)
 	}
-	if got, want := server.lastExecute(t), "install -m 0640 /dev/stdin '/opt/aurora-aiops/transient'"; got != want {
-		t.Fatalf("exec request = %q, want %q", got, want)
+	if got, want := server.lastExecute(t), "install -m 0640 /dev/stdin '/opt/aurora-aiops/transient'"; !strings.HasSuffix(got, want) {
+		t.Fatalf("exec request = %q, want suffix %q", got, want)
 	}
 }
 
 func TestSSHTransportUploadToleratesTransientZeroReadsWhileCopying(t *testing.T) {
 	server := newLoopbackSSHServer(t)
 	payload := []byte("partial-rest")
-	reader := io.MultiReader(
+	reader := &readCloserAdapter{Reader: io.MultiReader(
 		strings.NewReader("partial"),
 		&transientZeroEOFReader{reader: bytes.NewReader(nil), zeroReadsLeft: 2},
 		strings.NewReader("-rest"),
-	)
+	)}
 	err := NewSSHTransport(time.Second).Upload(
 		context.Background(), server.target(server.fingerprint()),
 		CredentialSecret{Password: testSSHPassword}, reader, int64(len(payload)), "/tmp/aurora-aiops/transient-copy", 0o600,
@@ -595,6 +854,71 @@ func TestSSHTransportUploadToleratesTransientZeroReadsWhileCopying(t *testing.T)
 	}
 	if got := server.lastUpload(t); !bytes.Equal(got, payload) {
 		t.Fatalf("uploaded bytes = %q, want %q", got, payload)
+	}
+}
+
+func TestSSHTransportUploadCancelsBlockingReadCloserBeforeDial(t *testing.T) {
+	server := newLoopbackSSHServer(t)
+	reader := newBlockingReadCloser()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- NewSSHTransport(time.Second).Upload(
+			ctx, server.target(server.fingerprint()),
+			CredentialSecret{Password: testSSHPassword}, reader, 1, "/tmp/aurora-aiops/blocking", 0o600,
+		)
+	}()
+	select {
+	case <-reader.started:
+	case <-time.After(time.Second):
+		reader.Close()
+		<-done
+		t.Fatal("blocking reader was not read")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("error = %v, want context canceled", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		reader.Close()
+		<-done
+		t.Fatal("blocking ReadCloser did not unblock promptly on cancellation")
+	}
+	if got := server.connectionCount(); got != 0 {
+		t.Fatalf("blocking source dialed server %d times, want 0", got)
+	}
+}
+
+func TestSSHTransportUploadRejectsBlockingNonCloserBeforeReadOrDial(t *testing.T) {
+	server := newLoopbackSSHServer(t)
+	reader := newBlockingNonCloserReader()
+	defer reader.unblock()
+	done := make(chan error, 1)
+	go func() {
+		done <- NewSSHTransport(time.Second).Upload(
+			context.Background(), server.target(server.fingerprint()),
+			CredentialSecret{Password: testSSHPassword}, reader, 1, "/opt/aurora-aiops/unsupported", 0o600,
+		)
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("error = %v, want ErrInvalidInput", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		reader.unblock()
+		<-done
+		t.Fatal("unsupported non-closer reader was read instead of rejected")
+	}
+	select {
+	case <-reader.started:
+		t.Fatal("unsupported non-closer reader was read")
+	default:
+	}
+	if got := server.connectionCount(); got != 0 {
+		t.Fatalf("unsupported source dialed server %d times, want 0", got)
 	}
 }
 
@@ -720,6 +1044,7 @@ func TestSSHTransportUploadRejectsLengthMismatchAndCommandFailure(t *testing.T) 
 	target := server.target(server.fingerprint())
 	secret := CredentialSecret{Password: testSSHPassword}
 	path := "/opt/aurora-aiops/file"
+	connectionsBefore := server.connectionCount()
 
 	for name, reader := range map[string]io.Reader{
 		"short":    strings.NewReader("123"),
@@ -734,6 +1059,16 @@ func TestSSHTransportUploadRejectsLengthMismatchAndCommandFailure(t *testing.T) 
 				t.Fatalf("error = %v, want io.ErrUnexpectedEOF", err)
 			}
 		})
+	}
+	if got := server.connectionCount(); got != connectionsBefore {
+		t.Fatalf("length mismatch dialed server: connections %d -> %d", connectionsBefore, got)
+	}
+	server.mu.Lock()
+	executesAfterMismatch := len(server.executes)
+	uploadsAfterMismatch := len(server.uploads)
+	server.mu.Unlock()
+	if executesAfterMismatch != 0 || uploadsAfterMismatch != 0 {
+		t.Fatalf("length mismatch mutated remote model: executes=%d uploads=%d", executesAfterMismatch, uploadsAfterMismatch)
 	}
 
 	server.uploadExitCode.Store(42)

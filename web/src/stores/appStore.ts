@@ -1,6 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+import { AURORA_STORAGE_KEY, migrateLegacyAppStorage } from './legacyStorageCompat';
+
+migrateLegacyAppStorage();
+
 export type PlatformUser = {
   id: string;
   username: string;
@@ -59,7 +63,7 @@ export const useAppStore = create<AppState>()(
       setNamespace: (namespace) => set({ namespace }),
     }),
     {
-      name: 'kubejojo-app',
+      name: AURORA_STORAGE_KEY,
     },
   ),
 );

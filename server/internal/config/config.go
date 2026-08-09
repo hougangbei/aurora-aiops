@@ -64,15 +64,15 @@ func Load() (Config, error) {
 		KubeconfigPath: kubeconfigPath(),
 		Cluster:        cluster,
 		Update: UpdateConfig{
-			Enabled:          getEnv("KUBEJOJO_UPDATE_ENABLED", "") == "true",
-			AllowPrereleases: getEnv("KUBEJOJO_UPDATE_ALLOW_PRERELEASES", "") == "true",
-			Repository:       getEnv("KUBEJOJO_UPDATE_REPOSITORY", "heihuzicity-tech/kubejojo"),
-			AllowedSubjects:  splitCSVEnv("KUBEJOJO_UPDATE_ALLOWED_SUBJECTS"),
-			GitHubToken:      getEnv("KUBEJOJO_UPDATE_GITHUB_TOKEN", ""),
-			TargetPath:       getEnv("KUBEJOJO_UPDATE_TARGET_PATH", ""),
+			Enabled:          getEnvCompat("UPDATE_ENABLED", "") == "true",
+			AllowPrereleases: getEnvCompat("UPDATE_ALLOW_PRERELEASES", "") == "true",
+			Repository:       getEnvCompat("UPDATE_REPOSITORY", "heihuzicity-tech/aurora-aiops"),
+			AllowedSubjects:  splitCSVEnvCompat("UPDATE_ALLOWED_SUBJECTS"),
+			GitHubToken:      getEnvCompat("UPDATE_GITHUB_TOKEN", ""),
+			TargetPath:       getEnvCompat("UPDATE_TARGET_PATH", ""),
 		},
 		AIOps: AIOpsConfig{
-			DBPath: getEnv("KUBEJOJO_AIOPS_DB", "./data/kubejojo.db"),
+			DBPath: compatibleAIOpsDBPath(),
 		},
 		LLM: llm,
 	}, nil
@@ -81,19 +81,19 @@ func Load() (Config, error) {
 // loadLLMConfig parses the model endpoint settings. Only the timeout is
 // validated: an empty base URL/model simply disables model-backed roles.
 func loadLLMConfig() (LLMConfig, error) {
-	timeout, err := time.ParseDuration(getEnv("KUBEJOJO_LLM_TIMEOUT", "60s"))
+	timeout, err := time.ParseDuration(getEnvCompat("LLM_TIMEOUT", "60s"))
 	if err != nil {
-		return LLMConfig{}, fmt.Errorf("KUBEJOJO_LLM_TIMEOUT: %w", err)
+		return LLMConfig{}, fmt.Errorf("AURORA_AIOPS_LLM_TIMEOUT: %w", err)
 	}
 	if timeout <= 0 {
-		return LLMConfig{}, fmt.Errorf("KUBEJOJO_LLM_TIMEOUT must be positive: %s", timeout)
+		return LLMConfig{}, fmt.Errorf("AURORA_AIOPS_LLM_TIMEOUT must be positive: %s", timeout)
 	}
 
 	return LLMConfig{
-		BaseURL: getEnv("KUBEJOJO_LLM_BASE_URL", ""),
-		APIKey:  getEnv("KUBEJOJO_LLM_API_KEY", ""),
-		Model:   getEnv("KUBEJOJO_LLM_MODEL", ""),
-		Style:   getEnv("KUBEJOJO_LLM_API_STYLE", ""),
+		BaseURL: getEnvCompat("LLM_BASE_URL", ""),
+		APIKey:  getEnvCompat("LLM_API_KEY", ""),
+		Model:   getEnvCompat("LLM_MODEL", ""),
+		Style:   getEnvCompat("LLM_API_STYLE", ""),
 		Timeout: timeout,
 	}, nil
 }
@@ -101,28 +101,28 @@ func loadLLMConfig() (LLMConfig, error) {
 // loadClusterConfig parses the shared Kubernetes client connection parameters.
 // Invalid values must fail startup rather than silently falling back to defaults.
 func loadClusterConfig() (ClusterConfig, error) {
-	timeoutVal, err := time.ParseDuration(getEnv("KUBEJOJO_KUBE_TIMEOUT", "10s"))
+	timeoutVal, err := time.ParseDuration(getEnvCompat("KUBE_TIMEOUT", "10s"))
 	if err != nil {
-		return ClusterConfig{}, fmt.Errorf("KUBEJOJO_KUBE_TIMEOUT: %w", err)
+		return ClusterConfig{}, fmt.Errorf("AURORA_AIOPS_KUBE_TIMEOUT: %w", err)
 	}
 	if timeoutVal <= 0 {
-		return ClusterConfig{}, fmt.Errorf("KUBEJOJO_KUBE_TIMEOUT must be positive: %s", timeoutVal)
+		return ClusterConfig{}, fmt.Errorf("AURORA_AIOPS_KUBE_TIMEOUT must be positive: %s", timeoutVal)
 	}
 
-	qpsVal, err := strconv.ParseFloat(getEnv("KUBEJOJO_KUBE_QPS", "20"), 32)
+	qpsVal, err := strconv.ParseFloat(getEnvCompat("KUBE_QPS", "20"), 32)
 	if err != nil {
-		return ClusterConfig{}, fmt.Errorf("KUBEJOJO_KUBE_QPS: %w", err)
+		return ClusterConfig{}, fmt.Errorf("AURORA_AIOPS_KUBE_QPS: %w", err)
 	}
 	if qpsVal <= 0 {
-		return ClusterConfig{}, fmt.Errorf("KUBEJOJO_KUBE_QPS must be positive: %v", qpsVal)
+		return ClusterConfig{}, fmt.Errorf("AURORA_AIOPS_KUBE_QPS must be positive: %v", qpsVal)
 	}
 
-	burstVal, err := strconv.Atoi(getEnv("KUBEJOJO_KUBE_BURST", "40"))
+	burstVal, err := strconv.Atoi(getEnvCompat("KUBE_BURST", "40"))
 	if err != nil {
-		return ClusterConfig{}, fmt.Errorf("KUBEJOJO_KUBE_BURST: %w", err)
+		return ClusterConfig{}, fmt.Errorf("AURORA_AIOPS_KUBE_BURST: %w", err)
 	}
 	if burstVal <= 0 {
-		return ClusterConfig{}, fmt.Errorf("KUBEJOJO_KUBE_BURST must be positive: %d", burstVal)
+		return ClusterConfig{}, fmt.Errorf("AURORA_AIOPS_KUBE_BURST must be positive: %d", burstVal)
 	}
 
 	return ClusterConfig{
@@ -137,7 +137,7 @@ func loadClusterConfig() (ClusterConfig, error) {
 // in-cluster service account identity can be preferred over a default
 // kubeconfig when running inside the cluster.
 func kubeconfigPath() string {
-	if value := strings.TrimSpace(os.Getenv("KUBEJOJO_KUBECONFIG")); value != "" {
+	if value := getEnvCompat("KUBECONFIG", ""); value != "" {
 		return value
 	}
 
@@ -157,22 +157,4 @@ func getEnv(key string, fallback string) string {
 	}
 
 	return fallback
-}
-
-func splitCSVEnv(key string) []string {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return nil
-	}
-
-	parts := strings.Split(value, ",")
-	result := make([]string, 0, len(parts))
-	for _, item := range parts {
-		trimmed := strings.TrimSpace(item)
-		if trimmed != "" {
-			result = append(result, trimmed)
-		}
-	}
-
-	return result
 }

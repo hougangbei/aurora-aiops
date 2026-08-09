@@ -1,19 +1,79 @@
 package config
 
 import (
+	"bytes"
+	"log"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
 
 func TestLoadAIOpsDefaults(t *testing.T) {
+	t.Setenv("AURORA_AIOPS_AIOPS_DB", "")
 	t.Setenv("KUBEJOJO_AIOPS_DB", "")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.AIOps.DBPath != "./data/kubejojo.db" {
+	if cfg.AIOps.DBPath != "./data/aurora-aiops.db" {
 		t.Fatalf("DBPath = %q", cfg.AIOps.DBPath)
+	}
+}
+
+func TestLoadPrefersAuroraEnvironmentOverLegacy(t *testing.T) {
+	t.Setenv("AURORA_AIOPS_LLM_MODEL", "aurora-model")
+	t.Setenv("KUBEJOJO_LLM_MODEL", "legacy-model")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLM.Model != "aurora-model" {
+		t.Fatalf("model=%q want aurora-model", cfg.LLM.Model)
+	}
+}
+
+func TestLoadFallsBackToLegacyWithoutLoggingSecretValues(t *testing.T) {
+	var logs bytes.Buffer
+	previousWriter := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(previousWriter) })
+
+	t.Setenv("AURORA_AIOPS_LLM_API_KEY", "")
+	t.Setenv("KUBEJOJO_LLM_API_KEY", "legacy-secret-value")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLM.APIKey != "legacy-secret-value" {
+		t.Fatalf("APIKey was not loaded from the compatibility variable")
+	}
+	if !strings.Contains(logs.String(), "KUBEJOJO_LLM_API_KEY") {
+		t.Fatalf("missing legacy variable warning: %q", logs.String())
+	}
+	if strings.Contains(logs.String(), "legacy-secret-value") {
+		t.Fatalf("secret value leaked into logs: %q", logs.String())
+	}
+}
+
+func TestLoadUsesLegacyDefaultDatabaseWhenPresent(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.MkdirAll("data", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("data/kubejojo.db", []byte("legacy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AURORA_AIOPS_AIOPS_DB", "")
+	t.Setenv("KUBEJOJO_AIOPS_DB", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AIOps.DBPath != "./data/kubejojo.db" {
+		t.Fatalf("DBPath=%q want legacy database path", cfg.AIOps.DBPath)
 	}
 }
 
@@ -67,12 +127,14 @@ func TestLoadLLMInvalidTimeout(t *testing.T) {
 // explicit and KUBECONFIG-first-entry variables. The empty case defers identity
 // selection to kube.NewSharedClient (explicit/in-cluster/default).
 func TestKubeconfigPathPrecedence(t *testing.T) {
+	t.Setenv("AURORA_AIOPS_KUBECONFIG", "/aurora")
 	t.Setenv("KUBEJOJO_KUBECONFIG", "/explicit")
 	t.Setenv("KUBECONFIG", "/secondary")
-	if got := kubeconfigPath(); got != "/explicit" {
-		t.Fatalf("kubeconfigPath=%q want /explicit", got)
+	if got := kubeconfigPath(); got != "/aurora" {
+		t.Fatalf("kubeconfigPath=%q want /aurora", got)
 	}
 
+	t.Setenv("AURORA_AIOPS_KUBECONFIG", "")
 	t.Setenv("KUBEJOJO_KUBECONFIG", "")
 	t.Setenv("KUBECONFIG", "/first"+string(os.PathListSeparator)+"/second")
 	if got := kubeconfigPath(); got != "/first" {

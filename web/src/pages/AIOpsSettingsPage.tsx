@@ -7,10 +7,10 @@ import { getAIOpsReadiness } from '../modules/aiops/api';
 import { useAppStore } from '../stores/appStore';
 
 const environmentVariables = [
-  ['KUBEJOJO_LLM_BASE_URL', 'OpenAI-compatible HTTPS 端点'],
-  ['KUBEJOJO_LLM_API_KEY', '模型访问密钥，仅保存在后端运行环境'],
-  ['KUBEJOJO_LLM_MODEL', '模型名称'],
-  ['KUBEJOJO_LLM_API_STYLE', 'chat_completions 或 responses'],
+  ['AURORA_AIOPS_LLM_BASE_URL', 'OpenAI-compatible HTTPS 端点'],
+  ['AURORA_AIOPS_LLM_API_KEY', '模型访问密钥，仅保存在后端运行环境'],
+  ['AURORA_AIOPS_LLM_MODEL', '模型名称'],
+  ['AURORA_AIOPS_LLM_API_STYLE', 'chat_completions 或 responses'],
 ] as const;
 
 export function AIOpsSettingsPage() {

@@ -30,8 +30,8 @@ describe('AIOpsSettingsPage', () => {
     renderWithProviders(<AIOpsSettingsPage />);
 
     expect(await screen.findByText('模型未配置')).toBeVisible();
-    expect(screen.getByText('KUBEJOJO_LLM_BASE_URL')).toBeVisible();
-    expect(screen.getByText('KUBEJOJO_LLM_API_KEY')).toBeVisible();
+    expect(screen.getByText('AURORA_AIOPS_LLM_BASE_URL')).toBeVisible();
+    expect(screen.getByText('AURORA_AIOPS_LLM_API_KEY')).toBeVisible();
     expect(screen.queryByRole('button', { name: '保 存' })).toBeNull();
     expect(screen.queryByText(/配置已保存/)).toBeNull();
   });

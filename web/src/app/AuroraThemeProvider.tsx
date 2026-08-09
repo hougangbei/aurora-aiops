@@ -1,4 +1,4 @@
-import { ConfigProvider, theme, type ThemeConfig } from 'antd';
+import { App as AntdApp, ConfigProvider, theme, type ThemeConfig } from 'antd';
 import { type PropsWithChildren, useEffect } from 'react';
 
 export const auroraTheme: ThemeConfig = {
@@ -70,17 +70,25 @@ export const auroraTheme: ThemeConfig = {
 export function AuroraThemeProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     document.body.classList.add('aurora-portals');
+    ConfigProvider.config({
+      holderRender: (portalChildren) => (
+        <ConfigProvider theme={auroraTheme}>{portalChildren}</ConfigProvider>
+      ),
+    });
 
     return () => {
       document.body.classList.remove('aurora-portals');
+      ConfigProvider.config({ holderRender: undefined });
     };
   }, []);
 
   return (
     <ConfigProvider theme={auroraTheme}>
-      <div className="aurora-app dark" data-theme="aurora">
-        {children}
-      </div>
+      <AntdApp>
+        <div className="aurora-app dark" data-theme="aurora">
+          {children}
+        </div>
+      </AntdApp>
     </ConfigProvider>
   );
 }

@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { ConfigProvider } from 'antd';
+import { describe, expect, it, vi } from 'vitest';
 
 import { AuroraThemeProvider, auroraTheme } from './AuroraThemeProvider';
 
@@ -39,5 +40,22 @@ describe('AuroraThemeProvider', () => {
     unmount();
 
     expect(document.body).not.toHaveClass('aurora-portals');
+  });
+
+  it('provides Aurora context to both App.useApp and static overlay APIs', () => {
+    const configSpy = vi.spyOn(ConfigProvider, 'config');
+    const { unmount } = render(
+      <AuroraThemeProvider>
+        <div data-testid="overlay-context-content">content</div>
+      </AuroraThemeProvider>,
+    );
+
+    expect(screen.getByTestId('overlay-context-content').closest('.ant-app')).not.toBeNull();
+    expect(configSpy).toHaveBeenCalledWith({ holderRender: expect.any(Function) });
+
+    unmount();
+
+    expect(configSpy).toHaveBeenLastCalledWith({ holderRender: undefined });
+    configSpy.mockRestore();
   });
 });

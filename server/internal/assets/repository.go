@@ -268,6 +268,10 @@ UPDATE asset_servers SET host_key_fingerprint = ?, updated_at = ? WHERE id = ?`,
 }
 
 func (r *Repository) SaveCollection(ctx context.Context, server Server, snapshot Snapshot, software []SoftwareItem) error {
+	if server.ID != snapshot.ServerID {
+		return fmt.Errorf("save collection server %q does not own snapshot for %q: %w", server.ID, snapshot.ServerID, ErrInvalidInput)
+	}
+
 	payload, err := json.Marshal(snapshot)
 	if err != nil {
 		return fmt.Errorf("save collection encode snapshot: %w", err)

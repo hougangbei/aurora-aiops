@@ -276,6 +276,64 @@ func TestRepositorySaveCollectionIsAtomicAndListsSoftwareDeterministically(t *te
 	}
 }
 
+func TestRepositorySaveCollectionRejectsMismatchedServerOwnership(t *testing.T) {
+	ctx := context.Background()
+	db := openRepositoryDB(t)
+	repo := NewRepository(db)
+	base := time.Date(2026, 8, 9, 12, 30, 0, 0, time.UTC)
+	first := repositoryServer("server-1", "edge-1", "credential-1", base)
+	second := repositoryServer("server-2", "edge-2", "credential-2", base.Add(time.Second))
+	for _, server := range []Server{first, second} {
+		if _, err := repo.CreateServer(ctx, server, repositoryCredential(server.CredentialID, AuthPassword, server.CreatedAt)); err != nil {
+			t.Fatalf("CreateServer %s: %v", server.ID, err)
+		}
+	}
+	firstBefore, err := repo.GetServer(ctx, first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondBefore, err := repo.GetServer(ctx, second.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot := Snapshot{
+		ID:           "cross-owned-snapshot",
+		ServerID:     second.ID,
+		OSFamily:     "linux",
+		OSVersion:    "24.04",
+		Architecture: "amd64",
+		CPUCores:     16,
+		CollectedAt:  base.Add(time.Minute),
+	}
+	software := []SoftwareItem{{Category: "system", Name: "must-not-persist", Architecture: "amd64"}}
+	if err := repo.SaveCollection(ctx, first, snapshot, software); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("SaveCollection mismatched ownership error=%v want ErrInvalidInput", err)
+	}
+
+	var snapshotCount, softwareCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM asset_snapshots WHERE id = ?`, snapshot.ID).Scan(&snapshotCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM asset_software_items WHERE name = ?`, software[0].Name).Scan(&softwareCount); err != nil {
+		t.Fatal(err)
+	}
+	if snapshotCount != 0 || softwareCount != 0 {
+		t.Fatalf("mismatched collection persisted snapshot=%d software=%d", snapshotCount, softwareCount)
+	}
+	firstAfter, err := repo.GetServer(ctx, first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondAfter, err := repo.GetServer(ctx, second.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(firstAfter, firstBefore) || !reflect.DeepEqual(secondAfter, secondBefore) {
+		t.Fatalf("mismatched collection updated a server:\nfirst got %+v want %+v\nsecond got %+v want %+v", firstAfter, firstBefore, secondAfter, secondBefore)
+	}
+}
+
 func TestRepositoryRetainsNewestThirtySuccessfulSnapshots(t *testing.T) {
 	ctx := context.Background()
 	db := openRepositoryDB(t)
@@ -286,7 +344,7 @@ func TestRepositoryRetainsNewestThirtySuccessfulSnapshots(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := 1; i <= 31; i++ {
-		snapshot := Snapshot{ID: fmt.Sprintf("snapshot-%02d", i), ServerID: server.ID, OSFamily: "linux", Architecture: "amd64", CollectedAt: base.Add(time.Duration(i) * time.Minute)}
+		snapshot := Snapshot{ID: fmt.Sprintf("snapshot-%02d", i), ServerID: server.ID, OSFamily: "linux", Architecture: "amd64", CollectedAt: base}
 		items := []SoftwareItem{{Category: "system", Name: fmt.Sprintf("package-%02d", i), Architecture: "amd64"}}
 		if err := repo.SaveCollection(ctx, server, snapshot, items); err != nil {
 			t.Fatalf("SaveCollection %d: %v", i, err)
@@ -312,6 +370,44 @@ func TestRepositoryRetainsNewestThirtySuccessfulSnapshots(t *testing.T) {
 	}
 	if latest.ID != "snapshot-31" {
 		t.Fatalf("latest snapshot=%q want snapshot-31", latest.ID)
+	}
+}
+
+func TestRepositoryLatestSnapshotUsesIDDescendingForTimestampTie(t *testing.T) {
+	ctx := context.Background()
+	db := openRepositoryDB(t)
+	repo := NewRepository(db)
+	base := time.Date(2026, 8, 9, 13, 15, 0, 0, time.UTC)
+	server := repositoryServer("server-1", "edge-1", "credential-1", base)
+	if _, err := repo.CreateServer(ctx, server, repositoryCredential(server.CredentialID, AuthPassword, base)); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		id       string
+		software string
+	}{
+		{id: "snapshot-a", software: "from-a"},
+		{id: "snapshot-z", software: "from-z"},
+	} {
+		snapshot := Snapshot{ID: tc.id, ServerID: server.ID, CollectedAt: base.Add(time.Minute)}
+		if err := repo.SaveCollection(ctx, server, snapshot, []SoftwareItem{{Category: "runtime", Name: tc.software}}); err != nil {
+			t.Fatalf("SaveCollection %s: %v", tc.id, err)
+		}
+	}
+
+	latest, err := repo.LatestSnapshot(ctx, server.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest.ID != "snapshot-z" {
+		t.Fatalf("latest snapshot=%q want snapshot-z", latest.ID)
+	}
+	items, err := repo.ListLatestSoftware(ctx, server.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].Name != "from-z" {
+		t.Fatalf("latest software=%+v want snapshot-z software", items)
 	}
 }
 
@@ -467,6 +563,66 @@ func TestRepositoryDeleteCascadesAndNotFoundAndEmptyListsAreStable(t *testing.T)
 		if !errors.Is(err, ErrNotFound) {
 			t.Errorf("%s error=%v want ErrNotFound", operation, err)
 		}
+	}
+}
+
+func TestRepositoryDeletePreservesSharedCredentialUntilFinalReference(t *testing.T) {
+	ctx := context.Background()
+	db := openRepositoryDB(t)
+	repo := NewRepository(db)
+	base := time.Date(2026, 8, 9, 16, 0, 0, 0, time.UTC)
+	first := repositoryServer("server-1", "edge-1", "shared-credential", base)
+	if _, err := repo.CreateServer(ctx, first, repositoryCredential(first.CredentialID, AuthPassword, base)); err != nil {
+		t.Fatal(err)
+	}
+	second := repositoryServer("server-2", "edge-2", first.CredentialID, base.Add(time.Second))
+	if _, err := db.Exec(`
+INSERT INTO asset_servers (id, name, address, ssh_port, username, credential_id, status, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, second.ID, second.Name, second.Address, second.SSHPort,
+		second.Username, second.CredentialID, second.Status, formatRepositoryTime(second.CreatedAt),
+		formatRepositoryTime(second.UpdatedAt)); err != nil {
+		t.Fatalf("seed second shared-credential server: %v", err)
+	}
+	snapshot := Snapshot{ID: "snapshot-1", ServerID: first.ID, CollectedAt: base.Add(time.Minute)}
+	if err := repo.SaveCollection(ctx, first, snapshot, []SoftwareItem{{Category: "system", Name: "curl"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`
+INSERT INTO project_installations (id, server_id, project_id, version, status, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)`, "installation-1", first.ID, "project-1", "1.0", "installed",
+		formatRepositoryTime(base), formatRepositoryTime(base)); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := repo.DeleteServer(ctx, first.ID); err != nil {
+		t.Fatalf("DeleteServer first: %v", err)
+	}
+	for table, query := range map[string]string{
+		"first server":       `SELECT COUNT(*) FROM asset_servers WHERE id = 'server-1'`,
+		"first snapshots":    `SELECT COUNT(*) FROM asset_snapshots WHERE server_id = 'server-1'`,
+		"first software":     `SELECT COUNT(*) FROM asset_software_items`,
+		"first installation": `SELECT COUNT(*) FROM project_installations WHERE server_id = 'server-1'`,
+	} {
+		var count int
+		if err := db.QueryRow(query).Scan(&count); err != nil {
+			t.Fatalf("count %s: %v", table, err)
+		}
+		if count != 0 {
+			t.Fatalf("%s count=%d want 0", table, count)
+		}
+	}
+	if _, err := repo.GetServer(ctx, second.ID); err != nil {
+		t.Fatalf("second server removed with first: %v", err)
+	}
+	if _, err := repo.GetCredential(ctx, first.CredentialID); err != nil {
+		t.Fatalf("shared credential removed with first reference: %v", err)
+	}
+
+	if err := repo.DeleteServer(ctx, second.ID); err != nil {
+		t.Fatalf("DeleteServer final reference: %v", err)
+	}
+	if _, err := repo.GetCredential(ctx, first.CredentialID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("shared credential after final delete error=%v want ErrNotFound", err)
 	}
 }
 

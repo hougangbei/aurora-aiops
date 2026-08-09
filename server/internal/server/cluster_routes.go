@@ -8,9 +8,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/cluster"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/response"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/service"
+	"github.com/hougangbei/aurora-aiops/server/internal/cluster"
+	"github.com/hougangbei/aurora-aiops/server/internal/response"
+	"github.com/hougangbei/aurora-aiops/server/internal/service"
 )
 
 const probeCacheTTL = 30 * time.Second

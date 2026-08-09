@@ -13,10 +13,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/aiops"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/policy"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/remediation"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/response"
+	"github.com/hougangbei/aurora-aiops/server/internal/aiops"
+	"github.com/hougangbei/aurora-aiops/server/internal/policy"
+	"github.com/hougangbei/aurora-aiops/server/internal/remediation"
+	"github.com/hougangbei/aurora-aiops/server/internal/response"
 )
 
 type createIncidentRequest struct {

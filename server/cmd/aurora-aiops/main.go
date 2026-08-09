@@ -7,8 +7,8 @@ import (
 	"log"
 	"strings"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/buildinfo"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/server"
+	"github.com/hougangbei/aurora-aiops/server/internal/buildinfo"
+	"github.com/hougangbei/aurora-aiops/server/internal/server"
 )
 
 //go:embed VERSION

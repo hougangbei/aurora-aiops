@@ -14,3 +14,12 @@ if [[ -n "$violations" ]]; then
 fi
 
 echo "Aurora AIOps brand guard passed"
+
+legacy_owner_references="$(git grep -In 'heihuzicity-tech' -- . ':(exclude)scripts/verify-brand-rename.sh' || true)"
+if [[ -n "$legacy_owner_references" ]]; then
+  echo "Unexpected legacy repository owner references:" >&2
+  echo "$legacy_owner_references" >&2
+  exit 1
+fi
+
+echo "Repository ownership guard passed"

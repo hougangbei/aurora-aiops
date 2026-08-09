@@ -14,7 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/cluster"
+	"github.com/hougangbei/aurora-aiops/server/internal/cluster"
 )
 
 type fakePodAPI struct {

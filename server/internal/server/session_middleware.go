@@ -6,9 +6,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/auth"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/response"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/service"
+	"github.com/hougangbei/aurora-aiops/server/internal/auth"
+	"github.com/hougangbei/aurora-aiops/server/internal/response"
+	"github.com/hougangbei/aurora-aiops/server/internal/service"
 )
 
 const (

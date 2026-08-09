@@ -33,9 +33,9 @@ import (
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 	"sigs.k8s.io/yaml"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/cluster"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/jsonx"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/kube"
+	"github.com/hougangbei/aurora-aiops/server/internal/cluster"
+	"github.com/hougangbei/aurora-aiops/server/internal/jsonx"
+	"github.com/hougangbei/aurora-aiops/server/internal/kube"
 )
 
 type ClusterService struct {

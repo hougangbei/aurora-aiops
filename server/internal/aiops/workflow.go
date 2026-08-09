@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/evidence"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/llm"
+	"github.com/hougangbei/aurora-aiops/server/internal/evidence"
+	"github.com/hougangbei/aurora-aiops/server/internal/llm"
 )
 
 // errWorkflowStopped signals a step ended the run (role failure recorded, or

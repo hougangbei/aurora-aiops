@@ -13,7 +13,7 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
 
-	appconfig "github.com/heihuzicity-tech/aurora-aiops/server/internal/config"
+	appconfig "github.com/hougangbei/aurora-aiops/server/internal/config"
 )
 
 const (

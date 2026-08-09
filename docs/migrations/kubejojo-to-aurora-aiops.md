@@ -32,4 +32,4 @@ Kubernetes Namespace、PVC 和 Secret 不能原地改名，不应直接删除旧
 
 ## GitHub 与在线更新
 
-本地验证完成后，在 GitHub 将仓库改名为 `heihuzicity-tech/aurora-aiops`，然后更新本地 origin。在首个 Aurora AIOps Release 发布前，不要启用新的在线更新入口。
+本地验证完成后，在 GitHub 将仓库改名为 `hougangbei/aurora-aiops`，然后更新本地 origin。在首个 Aurora AIOps Release 发布前，不要启用新的在线更新入口。

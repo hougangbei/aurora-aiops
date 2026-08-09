@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/buildinfo"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/config"
+	"github.com/hougangbei/aurora-aiops/server/internal/buildinfo"
+	"github.com/hougangbei/aurora-aiops/server/internal/config"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)

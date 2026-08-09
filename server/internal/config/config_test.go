@@ -21,6 +21,19 @@ func TestLoadAIOpsDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadUpdateRepositoryDefaultsToProjectRepository(t *testing.T) {
+	t.Setenv("AURORA_AIOPS_UPDATE_REPOSITORY", "")
+	t.Setenv("KUBEJOJO_UPDATE_REPOSITORY", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Update.Repository != "hougangbei/aurora-aiops" {
+		t.Fatalf("Repository = %q, want hougangbei/aurora-aiops", cfg.Update.Repository)
+	}
+}
+
 func TestLoadPrefersAuroraEnvironmentOverLegacy(t *testing.T) {
 	t.Setenv("AURORA_AIOPS_LLM_MODEL", "aurora-model")
 	t.Setenv("KUBEJOJO_LLM_MODEL", "legacy-model")

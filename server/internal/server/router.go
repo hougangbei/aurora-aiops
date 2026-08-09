@@ -18,17 +18,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/aiops"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/auth"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/buildinfo"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/cluster"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/experiment"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/kube"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/ptyx"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/remediation"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/response"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/service"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/web"
+	"github.com/hougangbei/aurora-aiops/server/internal/aiops"
+	"github.com/hougangbei/aurora-aiops/server/internal/auth"
+	"github.com/hougangbei/aurora-aiops/server/internal/buildinfo"
+	"github.com/hougangbei/aurora-aiops/server/internal/cluster"
+	"github.com/hougangbei/aurora-aiops/server/internal/experiment"
+	"github.com/hougangbei/aurora-aiops/server/internal/kube"
+	"github.com/hougangbei/aurora-aiops/server/internal/ptyx"
+	"github.com/hougangbei/aurora-aiops/server/internal/remediation"
+	"github.com/hougangbei/aurora-aiops/server/internal/response"
+	"github.com/hougangbei/aurora-aiops/server/internal/service"
+	"github.com/hougangbei/aurora-aiops/server/internal/web"
 )
 
 const clusterServiceContextKey = "clusterService"

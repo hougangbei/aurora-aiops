@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/auth"
+	"github.com/hougangbei/aurora-aiops/server/internal/auth"
 )
 
 func TestRequiredPlatformRoles(t *testing.T) {

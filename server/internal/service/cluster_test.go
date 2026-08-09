@@ -11,8 +11,8 @@ import (
 	"k8s.io/client-go/rest"
 	metricsfake "k8s.io/metrics/pkg/client/clientset/versioned/fake"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/cluster"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/kube"
+	"github.com/hougangbei/aurora-aiops/server/internal/cluster"
+	"github.com/hougangbei/aurora-aiops/server/internal/kube"
 )
 
 // TestListNodesIPMatchesClusterAddressRule proves the legacy NodeItem.IP

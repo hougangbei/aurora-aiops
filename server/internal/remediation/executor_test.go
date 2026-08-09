@@ -7,10 +7,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/aiops"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/audit"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/policy"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/store"
+	"github.com/hougangbei/aurora-aiops/server/internal/aiops"
+	"github.com/hougangbei/aurora-aiops/server/internal/audit"
+	"github.com/hougangbei/aurora-aiops/server/internal/policy"
+	"github.com/hougangbei/aurora-aiops/server/internal/store"
 )
 
 type recordingClient struct {

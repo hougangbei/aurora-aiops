@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/store"
+	"github.com/hougangbei/aurora-aiops/server/internal/store"
 )
 
 func newEvidenceRepository(t *testing.T) *sqlRepository {

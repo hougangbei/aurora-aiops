@@ -1,4 +1,4 @@
-module github.com/heihuzicity-tech/aurora-aiops/server
+module github.com/hougangbei/aurora-aiops/server
 
 go 1.25.1
 

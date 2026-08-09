@@ -4,7 +4,7 @@
 
 - 本文档用于说明 `Aurora AIOps` 当前对接的本地实验集群信息、日常运维入口以及本机开发联调方式。
 - 当前实验环境对应仓库：`/Users/zhangya/workspace/k8s-dev`
-- 当前产品仓库：`git@github.com:heihuzicity-tech/aurora-aiops.git`
+- 当前产品仓库：`git@github.com:hougangbei/aurora-aiops.git`
 
 ## 2. 实验集群概况
 

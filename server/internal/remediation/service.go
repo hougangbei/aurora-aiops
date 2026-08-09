@@ -16,9 +16,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/aiops"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/audit"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/policy"
+	"github.com/hougangbei/aurora-aiops/server/internal/aiops"
+	"github.com/hougangbei/aurora-aiops/server/internal/audit"
+	"github.com/hougangbei/aurora-aiops/server/internal/policy"
 )
 
 var (

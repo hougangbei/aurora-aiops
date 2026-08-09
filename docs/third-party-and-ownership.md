@@ -6,7 +6,7 @@
 
 ## 1. 授权结论
 
-仓库 `heihuzicity-tech/aurora-aiops`（远程 `https://github.com/heihuzicity-tech/aurora-aiops.git`）
+仓库 `hougangbei/aurora-aiops`（远程 `https://github.com/hougangbei/aurora-aiops.git`）
 当前未包含 `LICENSE` 或 `NOTICE` 文件。
 
 经负责人确认：**本仓库归团队所有，团队已获得在本项目「基于多智能体协同的云原生

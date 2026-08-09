@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/aiops"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/audit"
+	"github.com/hougangbei/aurora-aiops/server/internal/aiops"
+	"github.com/hougangbei/aurora-aiops/server/internal/audit"
 )
 
 // DecisionStore atomically persists a terminal incident decision and its

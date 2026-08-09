@@ -212,7 +212,7 @@ release 产物包含：
 ```bash
 AURORA_AIOPS_UPDATE_ENABLED=true
 AURORA_AIOPS_UPDATE_ALLOW_PRERELEASES=true
-AURORA_AIOPS_UPDATE_REPOSITORY=heihuzicity-tech/aurora-aiops
+AURORA_AIOPS_UPDATE_REPOSITORY=hougangbei/aurora-aiops
 AURORA_AIOPS_UPDATE_ALLOWED_SUBJECTS=system:serviceaccount:kube-system:aurora-aiops-dev
 AURORA_AIOPS_UPDATE_GITHUB_TOKEN=<optional-github-token>
 AURORA_AIOPS_UPDATE_TARGET_PATH=<optional-installed-binary-path>
@@ -224,7 +224,7 @@ AURORA_AIOPS_UPDATE_TARGET_PATH=<optional-installed-binary-path>
 | --- | --- |
 | `AURORA_AIOPS_UPDATE_ENABLED` | 是否启用在线更新入口。 |
 | `AURORA_AIOPS_UPDATE_ALLOW_PRERELEASES` | 是否允许检测和安装 `rc`、`beta`、`alpha` 预发布版本。 |
-| `AURORA_AIOPS_UPDATE_REPOSITORY` | GitHub Releases 仓库，默认 `heihuzicity-tech/aurora-aiops`。 |
+| `AURORA_AIOPS_UPDATE_REPOSITORY` | GitHub Releases 仓库，默认 `hougangbei/aurora-aiops`。 |
 | `AURORA_AIOPS_UPDATE_ALLOWED_SUBJECTS` | 允许执行更新、回滚、重启的 Kubernetes 身份白名单，逗号分隔。 |
 | `AURORA_AIOPS_UPDATE_GITHUB_TOKEN` | 可选，用于提升 GitHub API 访问稳定性和速率限制配额。 |
 | `AURORA_AIOPS_UPDATE_TARGET_PATH` | 可选，显式指定受管二进制路径，便于 release 模式下准确执行更新和回滚。 |

@@ -17,11 +17,11 @@ import (
 	"k8s.io/client-go/rest"
 	metricsfake "k8s.io/metrics/pkg/client/clientset/versioned/fake"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/auth"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/kube"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/response"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/service"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/store"
+	"github.com/hougangbei/aurora-aiops/server/internal/auth"
+	"github.com/hougangbei/aurora-aiops/server/internal/kube"
+	"github.com/hougangbei/aurora-aiops/server/internal/response"
+	"github.com/hougangbei/aurora-aiops/server/internal/service"
+	"github.com/hougangbei/aurora-aiops/server/internal/store"
 )
 
 func seedUser(t *testing.T, repo auth.Repository, id, username, password string, role auth.Role) {

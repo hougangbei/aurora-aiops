@@ -66,7 +66,7 @@ func Load() (Config, error) {
 		Update: UpdateConfig{
 			Enabled:          getEnvCompat("UPDATE_ENABLED", "") == "true",
 			AllowPrereleases: getEnvCompat("UPDATE_ALLOW_PRERELEASES", "") == "true",
-			Repository:       getEnvCompat("UPDATE_REPOSITORY", "heihuzicity-tech/aurora-aiops"),
+			Repository:       getEnvCompat("UPDATE_REPOSITORY", "hougangbei/aurora-aiops"),
 			AllowedSubjects:  splitCSVEnvCompat("UPDATE_ALLOWED_SUBJECTS"),
 			GitHubToken:      getEnvCompat("UPDATE_GITHUB_TOKEN", ""),
 			TargetPath:       getEnvCompat("UPDATE_TARGET_PATH", ""),

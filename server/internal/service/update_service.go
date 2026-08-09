@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/buildinfo"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/config"
+	"github.com/hougangbei/aurora-aiops/server/internal/buildinfo"
+	"github.com/hougangbei/aurora-aiops/server/internal/config"
 )
 
 const (

@@ -9,8 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/experiment"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/response"
+	"github.com/hougangbei/aurora-aiops/server/internal/experiment"
+	"github.com/hougangbei/aurora-aiops/server/internal/response"
 )
 
 // registerExperimentRoutes exposes experiment run recording and metrics export.

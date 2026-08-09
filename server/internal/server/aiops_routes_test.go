@@ -13,9 +13,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/aiops"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/auth"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/store"
+	"github.com/hougangbei/aurora-aiops/server/internal/aiops"
+	"github.com/hougangbei/aurora-aiops/server/internal/auth"
+	"github.com/hougangbei/aurora-aiops/server/internal/store"
 )
 
 // newTestRouter builds a gin.Engine with only the aiops routes registered,

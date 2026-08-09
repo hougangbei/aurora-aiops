@@ -17,17 +17,17 @@ import (
 	"k8s.io/client-go/rest"
 	metricsfake "k8s.io/metrics/pkg/client/clientset/versioned/fake"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/aiops"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/audit"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/auth"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/buildinfo"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/config"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/evidence"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/experiment"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/kube"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/remediation"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/service"
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/store"
+	"github.com/hougangbei/aurora-aiops/server/internal/aiops"
+	"github.com/hougangbei/aurora-aiops/server/internal/audit"
+	"github.com/hougangbei/aurora-aiops/server/internal/auth"
+	"github.com/hougangbei/aurora-aiops/server/internal/buildinfo"
+	"github.com/hougangbei/aurora-aiops/server/internal/config"
+	"github.com/hougangbei/aurora-aiops/server/internal/evidence"
+	"github.com/hougangbei/aurora-aiops/server/internal/experiment"
+	"github.com/hougangbei/aurora-aiops/server/internal/kube"
+	"github.com/hougangbei/aurora-aiops/server/internal/remediation"
+	"github.com/hougangbei/aurora-aiops/server/internal/service"
+	"github.com/hougangbei/aurora-aiops/server/internal/store"
 )
 
 // newPlatformRBACRouter builds the full production router with platform auth,

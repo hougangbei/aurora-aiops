@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/store"
+	"github.com/hougangbei/aurora-aiops/server/internal/store"
 )
 
 func newAuditTest(t *testing.T) (*sql.DB, Repository) {

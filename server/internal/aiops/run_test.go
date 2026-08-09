@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heihuzicity-tech/aurora-aiops/server/internal/store"
+	"github.com/hougangbei/aurora-aiops/server/internal/store"
 )
 
 // TestListRunsOrdersByInsertion guards the rowid sort: started_at is stored as

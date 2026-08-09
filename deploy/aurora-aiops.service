@@ -1,6 +1,6 @@
 [Unit]
 Description=Aurora AIOps - Kubernetes Single Cluster Console
-Documentation=https://github.com/heihuzicity-tech/aurora-aiops
+Documentation=https://github.com/hougangbei/aurora-aiops
 After=network.target
 
 [Service]
@@ -33,7 +33,7 @@ Environment=AURORA_AIOPS_AIOPS_DB=/opt/aurora-aiops/data/aurora-aiops.db
 # Environment=AURORA_AIOPS_LLM_API_STYLE=chat_completions
 # Environment=AURORA_AIOPS_UPDATE_ENABLED=true
 # Environment=AURORA_AIOPS_UPDATE_ALLOW_PRERELEASES=true
-# Environment=AURORA_AIOPS_UPDATE_REPOSITORY=heihuzicity-tech/aurora-aiops
+# Environment=AURORA_AIOPS_UPDATE_REPOSITORY=hougangbei/aurora-aiops
 # Environment=AURORA_AIOPS_UPDATE_ALLOWED_SUBJECTS=system:serviceaccount:kube-system:aurora-aiops-dev
 Environment=AURORA_AIOPS_UPDATE_TARGET_PATH=/opt/aurora-aiops/aurora-aiops
 

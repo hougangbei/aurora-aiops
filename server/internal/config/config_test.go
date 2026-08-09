@@ -2,12 +2,113 @@ package config
 
 import (
 	"bytes"
+	"encoding/base64"
 	"log"
 	"os"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestLoadAssetConfig(t *testing.T) {
+	wantKey := bytes.Repeat([]byte{0x42}, 32)
+	t.Setenv("AURORA_AIOPS_ASSET_ENCRYPTION_KEY", base64.StdEncoding.EncodeToString(wantKey))
+	t.Setenv("AURORA_AIOPS_ASSET_COLLECT_INTERVAL", "10m")
+	t.Setenv("KUBEJOJO_ASSET_ENCRYPTION_KEY", "")
+	t.Setenv("KUBEJOJO_ASSET_COLLECT_INTERVAL", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(cfg.Asset.EncryptionKey, wantKey) {
+		t.Fatalf("EncryptionKey = %x, want %x", cfg.Asset.EncryptionKey, wantKey)
+	}
+	if cfg.Asset.CollectInterval != 10*time.Minute {
+		t.Fatalf("CollectInterval = %s, want 10m", cfg.Asset.CollectInterval)
+	}
+}
+
+func TestLoadAssetConfigDefaults(t *testing.T) {
+	t.Setenv("AURORA_AIOPS_ASSET_ENCRYPTION_KEY", "")
+	t.Setenv("AURORA_AIOPS_ASSET_COLLECT_INTERVAL", "")
+	t.Setenv("KUBEJOJO_ASSET_ENCRYPTION_KEY", "")
+	t.Setenv("KUBEJOJO_ASSET_COLLECT_INTERVAL", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Asset.EncryptionKey) != 0 {
+		t.Fatalf("EncryptionKey = %x, want empty", cfg.Asset.EncryptionKey)
+	}
+	if cfg.Asset.CollectInterval != 15*time.Minute {
+		t.Fatalf("CollectInterval = %s, want 15m", cfg.Asset.CollectInterval)
+	}
+}
+
+func TestLoadAssetConfigFallsBackToLegacyAliases(t *testing.T) {
+	wantKey := bytes.Repeat([]byte{0x24}, 32)
+	t.Setenv("AURORA_AIOPS_ASSET_ENCRYPTION_KEY", "")
+	t.Setenv("AURORA_AIOPS_ASSET_COLLECT_INTERVAL", "")
+	t.Setenv("KUBEJOJO_ASSET_ENCRYPTION_KEY", base64.StdEncoding.EncodeToString(wantKey))
+	t.Setenv("KUBEJOJO_ASSET_COLLECT_INTERVAL", "20m")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(cfg.Asset.EncryptionKey, wantKey) {
+		t.Fatalf("EncryptionKey = %x, want %x", cfg.Asset.EncryptionKey, wantKey)
+	}
+	if cfg.Asset.CollectInterval != 20*time.Minute {
+		t.Fatalf("CollectInterval = %s, want 20m", cfg.Asset.CollectInterval)
+	}
+}
+
+func TestLoadRejectsInvalidAssetEncryptionKey(t *testing.T) {
+	t.Setenv("KUBEJOJO_ASSET_ENCRYPTION_KEY", "")
+
+	for _, tc := range []struct {
+		name  string
+		value string
+	}{
+		{name: "invalid base64", value: "not-base64"},
+		{name: "wrong decoded length", value: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 31))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("AURORA_AIOPS_ASSET_ENCRYPTION_KEY", tc.value)
+
+			_, err := Load()
+			if err == nil {
+				t.Fatal("expected invalid asset encryption key to fail")
+			}
+			if !strings.Contains(err.Error(), "ASSET_ENCRYPTION_KEY") {
+				t.Fatalf("error = %q, want ASSET_ENCRYPTION_KEY", err)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsInvalidAssetCollectInterval(t *testing.T) {
+	t.Setenv("AURORA_AIOPS_ASSET_ENCRYPTION_KEY", "")
+	t.Setenv("KUBEJOJO_ASSET_ENCRYPTION_KEY", "")
+	t.Setenv("KUBEJOJO_ASSET_COLLECT_INTERVAL", "")
+
+	for _, value := range []string{"not-a-duration", "0s", "-5m"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("AURORA_AIOPS_ASSET_COLLECT_INTERVAL", value)
+
+			_, err := Load()
+			if err == nil {
+				t.Fatalf("expected ASSET_COLLECT_INTERVAL=%q to fail", value)
+			}
+			if !strings.Contains(err.Error(), "ASSET_COLLECT_INTERVAL") {
+				t.Fatalf("error = %q, want ASSET_COLLECT_INTERVAL", err)
+			}
+		})
+	}
+}
 
 func TestLoadAIOpsDefaults(t *testing.T) {
 	t.Setenv("AURORA_AIOPS_AIOPS_DB", "")

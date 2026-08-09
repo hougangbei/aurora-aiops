@@ -12,13 +12,14 @@ const (
 )
 
 func getEnvCompat(suffix string, fallback string) string {
-	if value := strings.TrimSpace(os.Getenv(auroraEnvPrefix + suffix)); value != "" {
+	auroraKey := auroraEnvPrefix + suffix
+	if value := strings.TrimSpace(os.Getenv(auroraKey)); value != "" {
 		return value
 	}
 
 	legacyKey := legacyEnvPrefix + suffix
 	if value := strings.TrimSpace(os.Getenv(legacyKey)); value != "" {
-		log.Printf("deprecated environment variable %s is in use; migrate to %s%s", legacyKey, auroraEnvPrefix, suffix)
+		log.Printf("deprecated environment variable %s is in use; migrate to %s", legacyKey, auroraKey)
 		return value
 	}
 

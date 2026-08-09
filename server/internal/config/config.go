@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"strconv"
@@ -14,6 +15,7 @@ type Config struct {
 	Cluster        ClusterConfig
 	Update         UpdateConfig
 	AIOps          AIOpsConfig
+	Asset          AssetConfig
 	LLM            LLMConfig
 }
 
@@ -38,6 +40,11 @@ type AIOpsConfig struct {
 	DBPath string
 }
 
+type AssetConfig struct {
+	EncryptionKey   []byte
+	CollectInterval time.Duration
+}
+
 // LLMConfig holds the OpenAI-compatible model endpoint. An empty BaseURL
 // disables model-backed roles; the deterministic triage/collector still run.
 type LLMConfig struct {
@@ -59,6 +66,11 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	asset, err := loadAssetConfig()
+	if err != nil {
+		return Config{}, err
+	}
+
 	return Config{
 		HTTPAddr:       getEnv("HTTP_ADDR", ":8080"),
 		KubeconfigPath: kubeconfigPath(),
@@ -74,7 +86,35 @@ func Load() (Config, error) {
 		AIOps: AIOpsConfig{
 			DBPath: compatibleAIOpsDBPath(),
 		},
-		LLM: llm,
+		Asset: asset,
+		LLM:   llm,
+	}, nil
+}
+
+func loadAssetConfig() (AssetConfig, error) {
+	var encryptionKey []byte
+	if encodedKey := getEnvCompat("ASSET_ENCRYPTION_KEY", ""); encodedKey != "" {
+		decodedKey, err := base64.StdEncoding.DecodeString(encodedKey)
+		if err != nil {
+			return AssetConfig{}, fmt.Errorf("AURORA_AIOPS_ASSET_ENCRYPTION_KEY: %w", err)
+		}
+		if len(decodedKey) != 32 {
+			return AssetConfig{}, fmt.Errorf("AURORA_AIOPS_ASSET_ENCRYPTION_KEY must decode to exactly 32 bytes: got %d", len(decodedKey))
+		}
+		encryptionKey = decodedKey
+	}
+
+	collectInterval, err := time.ParseDuration(getEnvCompat("ASSET_COLLECT_INTERVAL", "15m"))
+	if err != nil {
+		return AssetConfig{}, fmt.Errorf("AURORA_AIOPS_ASSET_COLLECT_INTERVAL: %w", err)
+	}
+	if collectInterval <= 0 {
+		return AssetConfig{}, fmt.Errorf("AURORA_AIOPS_ASSET_COLLECT_INTERVAL must be positive: %s", collectInterval)
+	}
+
+	return AssetConfig{
+		EncryptionKey:   encryptionKey,
+		CollectInterval: collectInterval,
 	}, nil
 }
 

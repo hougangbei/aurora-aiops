@@ -225,5 +225,106 @@ ON experiment_runs(group_name)`)
 		return err
 	}
 
-	return nil
+	return migrateAssetSchema(db)
+}
+
+func migrateAssetSchema(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec(`
+CREATE TABLE IF NOT EXISTS asset_credentials (
+  id TEXT PRIMARY KEY,
+  auth_type TEXT NOT NULL CHECK (auth_type IN ('password','private_key')),
+  nonce BLOB NOT NULL,
+  ciphertext BLOB NOT NULL,
+  key_version INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)`)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`
+CREATE TABLE IF NOT EXISTS asset_servers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  address TEXT NOT NULL,
+  ssh_port INTEGER NOT NULL CHECK (ssh_port BETWEEN 1 AND 65535),
+  username TEXT NOT NULL,
+  credential_id TEXT NOT NULL REFERENCES asset_credentials(id),
+  host_key_fingerprint TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL CHECK (status IN ('pending','online','offline','error')),
+  status_message TEXT NOT NULL DEFAULT '',
+  os_family TEXT NOT NULL DEFAULT '',
+  os_version TEXT NOT NULL DEFAULT '',
+  architecture TEXT NOT NULL DEFAULT '',
+  cpu_cores INTEGER NOT NULL DEFAULT 0,
+  memory_bytes INTEGER NOT NULL DEFAULT 0,
+  disk_bytes INTEGER NOT NULL DEFAULT 0,
+  last_seen_at TEXT NOT NULL DEFAULT '',
+  last_collected_at TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)`)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`
+CREATE TABLE IF NOT EXISTS asset_snapshots (
+  id TEXT PRIMARY KEY,
+  server_id TEXT NOT NULL REFERENCES asset_servers(id) ON DELETE CASCADE,
+  payload TEXT NOT NULL,
+  collected_at TEXT NOT NULL
+)`)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`
+CREATE INDEX IF NOT EXISTS idx_asset_snapshots_server_time
+ON asset_snapshots(server_id, collected_at DESC)`)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`
+CREATE TABLE IF NOT EXISTS asset_software_items (
+  snapshot_id TEXT NOT NULL REFERENCES asset_snapshots(id) ON DELETE CASCADE,
+  category TEXT NOT NULL,
+  name TEXT NOT NULL,
+  version TEXT NOT NULL DEFAULT '',
+  architecture TEXT NOT NULL DEFAULT '',
+  source TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (snapshot_id, category, name, architecture)
+)`)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`
+CREATE TABLE IF NOT EXISTS project_installations (
+  id TEXT PRIMARY KEY,
+  server_id TEXT NOT NULL REFERENCES asset_servers(id) ON DELETE CASCADE,
+  project_id TEXT NOT NULL,
+  version TEXT NOT NULL,
+  status TEXT NOT NULL,
+  install_path TEXT NOT NULL DEFAULT '',
+  health_summary TEXT NOT NULL DEFAULT '',
+  last_task_id TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(server_id, project_id)
+)`)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }

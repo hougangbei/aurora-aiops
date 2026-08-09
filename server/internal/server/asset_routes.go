@@ -214,7 +214,14 @@ func registerAssetRoutes(group *gin.RouterGroup, svc *assets.Service) {
 	servers.POST("/:id/collect", RequireOperator(), func(c *gin.Context) {
 		snapshot, _, err := svc.Collect(c.Request.Context(), currentActorName(c), c.Param("id"))
 		if err != nil {
-			respondAssetError(c, err, nil)
+			var server *assets.Server
+			var hostKeyErr *assets.HostKeyError
+			if errors.As(err, &hostKeyErr) {
+				if current, getErr := svc.Get(c.Request.Context(), c.Param("id")); getErr == nil {
+					server = &current
+				}
+			}
+			respondAssetError(c, err, server)
 			return
 		}
 		c.JSON(http.StatusOK, response.Success(assetSnapshotDTO(snapshot)))

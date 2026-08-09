@@ -219,8 +219,22 @@ func TestAssetRoutesCollectMapsTypedHostKeyErrorToConflict(t *testing.T) {
 		return assets.CommandResult{}, &assets.HostKeyError{Expected: "SHA256:old", Actual: "SHA256:new", Changed: true}
 	}
 	rec := assetRouteRequest(t, h.router, http.MethodPost, "/api/v1/assets/servers/"+id+"/collect", "")
-	if rec.Code != http.StatusConflict || decodeAssetEnvelope(t, rec)["code"] != "SSH_HOST_KEY_CONFIRMATION_REQUIRED" {
+	body := decodeAssetEnvelope(t, rec)
+	if rec.Code != http.StatusConflict || body["code"] != "SSH_HOST_KEY_CONFIRMATION_REQUIRED" {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	data := body["data"].(map[string]any)
+	server, ok := data["server"].(map[string]any)
+	if !ok || server["id"] != id || server["hostKeyFingerprint"] != "SHA256:old" || server["credentialAuthType"] != string(assets.AuthPassword) || server["credentialConfigured"] != true {
+		t.Fatalf("collect conflict data=%+v", data)
+	}
+	if data["fingerprint"] != "SHA256:new" || data["changed"] != true {
+		t.Fatalf("collect host-key data=%+v", data)
+	}
+	for _, forbidden := range []string{"route-password-canary", "credentialId", "CredentialID", "envelope", "nonce", "ciphertext", "privateKey", "passphrase"} {
+		if strings.Contains(rec.Body.String(), forbidden) {
+			t.Fatalf("collect conflict leaked %q: %s", forbidden, rec.Body.String())
+		}
 	}
 }
 

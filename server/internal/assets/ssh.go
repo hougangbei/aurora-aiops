@@ -322,23 +322,33 @@ func guardedInstallCommand(destination string, mode fs.FileMode) string {
 	}
 	parent := path.Dir(destination)
 	// The command treats the selected root as a control-plane trust boundary.
-	// Aurora owns that root and its managed descendants: the root must be a real,
-	// uid-0-owned directory without group/other write access before any descendant
-	// path is resolved or installed, preventing unprivileged path replacement.
+	// Every directory entry from the destination parent through the root must be
+	// real, uid-0-owned, and not group/other writable. An unprivileged actor then
+	// cannot replace a checked component between validation and install. Root
+	// compromise is outside this threat model.
 	guards := []string{
 		"root=" + quotePOSIX(root),
 		"parent=" + quotePOSIX(parent),
 		"destination=" + quotePOSIX(destination),
-		`[ -d "$root" ]`,
-		`[ ! -L "$root" ]`,
-		`[ "$(stat -c %u -- "$root")" = 0 ]`,
-		`root_mode=$(stat -c %a -- "$root")`,
-		`case "$root_mode" in *[2367][0-7]|*[0-7][2367]) false ;; *) true ;; esac`,
 		`root_resolved=$(readlink -f -- "$root")`,
 		`[ -n "$root_resolved" ]`,
+		`[ "$root_resolved" = "$root" ]`,
 		`parent_resolved=$(readlink -f -- "$parent")`,
 		`[ -n "$parent_resolved" ]`,
 		`case "$parent_resolved" in "$root_resolved"|"$root_resolved"/*) true ;; *) false ;; esac`,
+		`current="$parent"`,
+		`while :; do
+  [ -d "$current" ] || exit 73
+  [ ! -L "$current" ] || exit 73
+  [ "$(stat -c %u -- "$current")" = 0 ] || exit 73
+  current_mode=$(stat -c %a -- "$current") || exit 73
+  case "$current_mode" in *[2367][0-7]|*[0-7][2367]) exit 73 ;; esac
+  if [ "$current" = "$root" ]; then break; fi
+  next=$(dirname -- "$current") || exit 73
+  [ "$next" != "$current" ] || exit 73
+  case "$next" in "$root"|"$root"/*) ;; *) exit 73 ;; esac
+  current="$next"
+done`,
 		`[ ! -L "$destination" ]`,
 		fmt.Sprintf("install -m %04o /dev/stdin %s", mode.Perm(), quotePOSIX(destination)),
 	}
@@ -349,7 +359,7 @@ func sanitizeSSHDiagnostic(diagnostic string) string {
 	var sanitized strings.Builder
 	sanitized.Grow(int(maxSSHUploadStderr))
 	for _, r := range diagnostic {
-		if unicode.IsControl(r) {
+		if unicode.Is(unicode.C, r) || r == '\u2028' || r == '\u2029' {
 			r = ' '
 		}
 		previousLength := sanitized.Len()
@@ -382,14 +392,14 @@ func copyUploadExact(ctx context.Context, destination io.Writer, source io.Reade
 			emptyReads = 0
 			written, writeErr := destination.Write(buffer[:n])
 			if written < 0 || written > n {
-				return fmt.Errorf("SSH upload stdin returned invalid write count %d: %w", written, io.ErrShortWrite)
+				return fmt.Errorf("upload destination returned invalid write count %d: %w", written, io.ErrShortWrite)
 			}
 			remaining -= int64(written)
 			if writeErr != nil {
-				return fmt.Errorf("write SSH upload stdin: %w", writeErr)
+				return fmt.Errorf("write upload destination: %w", writeErr)
 			}
 			if written != n {
-				return fmt.Errorf("write SSH upload stdin: %w", io.ErrShortWrite)
+				return fmt.Errorf("write upload destination: %w", io.ErrShortWrite)
 			}
 			if remaining == 0 {
 				return nil

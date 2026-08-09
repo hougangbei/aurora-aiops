@@ -11,12 +11,14 @@ import (
 	"io"
 	"net"
 	"os"
+	"path"
 	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -49,35 +51,63 @@ type loopbackSSHServer struct {
 
 type loopbackGuardModel struct {
 	root               string
-	rootExists         bool
-	rootDirectory      bool
-	rootSymlink        bool
-	rootUID            int
-	rootMode           os.FileMode
 	resolvedParent     string
 	destinationSymlink bool
 	target             []byte
 	diagnostic         string
+	components         map[string]*loopbackPathComponent
+	mutationAttempt    bool
+	mutationBlocked    bool
+}
+
+type loopbackPathComponent struct {
+	exists    bool
+	directory bool
+	symlink   bool
+	uid       int
+	mode      os.FileMode
 }
 
 func trustedLoopbackGuard(root, resolvedParent string) loopbackGuardModel {
-	return loopbackGuardModel{
+	model := loopbackGuardModel{
 		root:           root,
-		rootExists:     true,
-		rootDirectory:  true,
-		rootUID:        0,
-		rootMode:       0o755,
 		resolvedParent: resolvedParent,
 		target:         []byte("original target"),
 		diagnostic:     "guard rejected\x00" + strings.Repeat("z", 5000),
+		components:     make(map[string]*loopbackPathComponent),
 	}
+	for current := resolvedParent; ; current = path.Dir(current) {
+		model.components[current] = &loopbackPathComponent{exists: true, directory: true, uid: 0, mode: 0o755}
+		if current == root {
+			break
+		}
+	}
+	return model
 }
 
 func (m *loopbackGuardModel) allowsInstall() bool {
-	if !m.rootExists || !m.rootDirectory || m.rootSymlink || m.rootUID != 0 || m.rootMode.Perm()&0o022 != 0 || m.destinationSymlink {
+	current := m.resolvedParent
+	for {
+		component, ok := m.components[current]
+		if !ok || !component.exists || !component.directory || component.symlink || component.uid != 0 || component.mode.Perm()&0o022 != 0 {
+			return false
+		}
+		if current == m.root {
+			break
+		}
+		next := path.Dir(current)
+		if next == current || (next != m.root && !strings.HasPrefix(next, m.root+"/")) {
+			return false
+		}
+		current = next
+	}
+	if m.destinationSymlink {
 		return false
 	}
-	return m.resolvedParent == m.root || strings.HasPrefix(m.resolvedParent, m.root+"/")
+	if m.mutationAttempt {
+		m.mutationBlocked = true
+	}
+	return true
 }
 
 type transientZeroEOFReader struct {
@@ -113,6 +143,10 @@ func (noProgressReader) Close() error { return nil }
 type readCloserAdapter struct{ io.Reader }
 
 func (*readCloserAdapter) Close() error { return nil }
+
+type failingUploadWriter struct{ err error }
+
+func (w failingUploadWriter) Write([]byte) (int, error) { return 0, w.err }
 
 type blockingReadCloser struct {
 	started   chan struct{}
@@ -304,6 +338,12 @@ func (s *loopbackSSHServer) modeledTarget() []byte {
 	return append([]byte(nil), s.guard.target...)
 }
 
+func (s *loopbackSSHServer) modeledMutationBlocked() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.guard != nil && s.guard.mutationBlocked
+}
+
 func (s *loopbackSSHServer) serve() {
 	defer s.wg.Done()
 	for {
@@ -441,13 +481,18 @@ func (s *loopbackSSHServer) handleSession(channel ssh.Channel, requests <-chan *
 
 func loopbackCommandHasUploadGuards(command string) bool {
 	markers := []string{
-		`[ -d "$root" ]`,
-		`[ ! -L "$root" ]`,
-		`stat -c %u -- "$root"`,
-		`stat -c %a -- "$root"`,
-		`case "$root_mode" in *[2367][0-7]|*[0-7][2367])`,
 		`readlink -f -- "$root"`,
 		`readlink -f -- "$parent"`,
+		`current="$parent"`,
+		`while :; do`,
+		`[ -d "$current" ]`,
+		`[ ! -L "$current" ]`,
+		`stat -c %u -- "$current"`,
+		`stat -c %a -- "$current"`,
+		`case "$current_mode" in *[2367][0-7]|*[0-7][2367])`,
+		`[ "$current" = "$root" ]`,
+		`dirname -- "$current"`,
+		`[ "$next" != "$current" ]`,
 		`[ ! -L "$destination" ]`,
 	}
 	for _, marker := range markers {
@@ -459,13 +504,33 @@ func loopbackCommandHasUploadGuards(command string) bool {
 }
 
 func TestSSHTransportSanitizesAndBoundsUploadDiagnostic(t *testing.T) {
-	diagnostic := string(bytes.Repeat([]byte{0xff}, int(maxSSHUploadStderr))) + "\x00\n"
+	diagnostic := "useful text\u202enext\u2028line\u2029paragraph" + string(bytes.Repeat([]byte{0xff}, int(maxSSHUploadStderr))) + "\x00\n"
 	got := sanitizeSSHDiagnostic(diagnostic)
 	if len(got) > int(maxSSHUploadStderr) {
 		t.Fatalf("sanitized diagnostic = %d bytes, want <= %d", len(got), maxSSHUploadStderr)
 	}
-	if strings.ContainsAny(got, "\x00\n") {
+	if strings.IndexFunc(got, func(r rune) bool {
+		return unicode.Is(unicode.C, r) || r == '\u2028' || r == '\u2029'
+	}) >= 0 {
 		t.Fatalf("sanitized diagnostic contains control characters: %q", got)
+	}
+	if !strings.Contains(got, "useful text") {
+		t.Fatalf("sanitized diagnostic lost useful printable text: %q", got)
+	}
+}
+
+func TestSSHTransportCopyUploadExactUsesNeutralWriterAttribution(t *testing.T) {
+	payload := "payload-secret-must-not-leak"
+	diskErr := errors.New("disk full")
+	err := copyUploadExact(context.Background(), failingUploadWriter{err: diskErr}, strings.NewReader(payload), int64(len(payload)))
+	if !errors.Is(err, diskErr) {
+		t.Fatalf("error = %v, want wrapped disk error", err)
+	}
+	if !strings.Contains(err.Error(), "upload destination") || strings.Contains(err.Error(), "SSH") {
+		t.Fatalf("error has incorrect writer attribution: %v", err)
+	}
+	if strings.Contains(err.Error(), payload) {
+		t.Fatalf("error leaked upload payload: %v", err)
 	}
 }
 
@@ -728,7 +793,7 @@ func TestSSHTransportBoundsCombinedOutput(t *testing.T) {
 func TestSSHTransportUploadStreamsExactBytesAndQuotesPath(t *testing.T) {
 	server := newLoopbackSSHServer(t)
 	payload := []byte("exact upload contents\n")
-	path := "/tmp/aurora-aiops/collector's binary"
+	path := "/tmp/aurora-aiops/collector's dir/binary"
 	err := NewSSHTransport(time.Second).Upload(
 		context.Background(), server.target(server.fingerprint()),
 		CredentialSecret{Password: testSSHPassword}, bytes.NewReader(payload), int64(len(payload)), path, 0o750,
@@ -739,9 +804,12 @@ func TestSSHTransportUploadStreamsExactBytesAndQuotesPath(t *testing.T) {
 	if got := server.lastUpload(t); !bytes.Equal(got, payload) {
 		t.Fatalf("uploaded bytes = %q, want %q", got, payload)
 	}
-	wantSuffix := "install -m 0750 /dev/stdin '/tmp/aurora-aiops/collector'\"'\"'s binary'"
+	wantSuffix := "install -m 0750 /dev/stdin '/tmp/aurora-aiops/collector'\"'\"'s dir/binary'"
 	if got := server.lastExecute(t); !strings.HasSuffix(got, wantSuffix) {
 		t.Fatalf("exec request = %q, want suffix %q", got, wantSuffix)
+	}
+	if got, want := server.lastExecute(t), "parent='/tmp/aurora-aiops/collector'\"'\"'s dir'"; !strings.Contains(got, want) {
+		t.Fatalf("exec request = %q, want quoted parent %q", got, want)
 	}
 }
 
@@ -761,20 +829,36 @@ func TestSSHTransportUploadCommandGuardsResolvedTrustedPath(t *testing.T) {
 		`root='/tmp/aurora-aiops'`,
 		`parent='/tmp/aurora-aiops/child'`,
 		`destination='/tmp/aurora-aiops/child/collector'"'"'s binary'`,
-		`[ -d "$root" ]`,
-		`[ ! -L "$root" ]`,
-		`stat -c %u -- "$root"`,
-		`stat -c %a -- "$root"`,
-		`case "$root_mode" in *[2367][0-7]|*[0-7][2367])`,
 		`readlink -f -- "$root"`,
+		`[ "$root_resolved" = "$root" ]`,
 		`readlink -f -- "$parent"`,
 		`case "$parent_resolved" in "$root_resolved"|"$root_resolved"/*)`,
+		`current="$parent"`,
+		`while :; do`,
+		`[ -d "$current" ]`,
+		`[ ! -L "$current" ]`,
+		`[ "$(stat -c %u -- "$current")" = 0 ]`,
+		`current_mode=$(stat -c %a -- "$current")`,
+		`case "$current_mode" in *[2367][0-7]|*[0-7][2367])`,
+		`if [ "$current" = "$root" ]; then break; fi`,
+		`next=$(dirname -- "$current")`,
+		`[ "$next" != "$current" ]`,
+		`case "$next" in "$root"|"$root"/*)`,
+		`current="$next"`,
+		`done`,
 		`[ ! -L "$destination" ]`,
 		`install -m 0750 /dev/stdin '/tmp/aurora-aiops/child/collector'"'"'s binary'`,
 	} {
 		if !strings.Contains(command, marker) {
 			t.Errorf("command missing guard %q: %s", marker, command)
 		}
+	}
+	loopIndex := strings.Index(command, `while :; do`)
+	reachesRootIndex := strings.Index(command, `if [ "$current" = "$root" ]; then break; fi`)
+	doneIndex := strings.Index(command, "\ndone")
+	installIndex := strings.LastIndex(command, `install -m 0750`)
+	if loopIndex < 0 || reachesRootIndex <= loopIndex || doneIndex <= reachesRootIndex || installIndex <= doneIndex {
+		t.Fatalf("ancestor validation/install order is unsafe: %s", command)
 	}
 }
 
@@ -783,21 +867,25 @@ func TestSSHTransportUploadRemoteGuardsPreventTargetMutation(t *testing.T) {
 		name   string
 		mutate func(*loopbackGuardModel)
 	}{
-		{name: "root symlink", mutate: func(model *loopbackGuardModel) { model.rootSymlink = true }},
-		{name: "untrusted owner", mutate: func(model *loopbackGuardModel) { model.rootUID = 1000 }},
-		{name: "untrusted mode", mutate: func(model *loopbackGuardModel) { model.rootMode = 0o777 }},
+		{name: "root symlink", mutate: func(model *loopbackGuardModel) { model.components[model.root].symlink = true }},
+		{name: "root untrusted owner", mutate: func(model *loopbackGuardModel) { model.components[model.root].uid = 1000 }},
+		{name: "root untrusted mode", mutate: func(model *loopbackGuardModel) { model.components[model.root].mode = 0o777 }},
+		{name: "child wrong owner", mutate: func(model *loopbackGuardModel) { model.components[model.root+"/child"].uid = 1000 }},
+		{name: "child group writable", mutate: func(model *loopbackGuardModel) { model.components[model.root+"/child"].mode = 0o775 }},
+		{name: "nested symlink", mutate: func(model *loopbackGuardModel) { model.components[model.root+"/child/nested"].symlink = true }},
+		{name: "nested other writable", mutate: func(model *loopbackGuardModel) { model.components[model.root+"/child/nested"].mode = 0o757 }},
 		{name: "parent outside root", mutate: func(model *loopbackGuardModel) { model.resolvedParent = "/tmp/attacker" }},
 		{name: "destination symlink", mutate: func(model *loopbackGuardModel) { model.destinationSymlink = true }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			server := newLoopbackSSHServer(t)
-			model := trustedLoopbackGuard("/tmp/aurora-aiops", "/tmp/aurora-aiops/child")
+			model := trustedLoopbackGuard("/tmp/aurora-aiops", "/tmp/aurora-aiops/child/nested")
 			test.mutate(&model)
 			server.setGuardModel(model)
 			err := NewSSHTransport(time.Second).Upload(
 				context.Background(), server.target(server.fingerprint()), CredentialSecret{Password: testSSHPassword},
-				strings.NewReader("replacement"), int64(len("replacement")), "/tmp/aurora-aiops/child/target", 0o640,
+				strings.NewReader("replacement"), int64(len("replacement")), "/tmp/aurora-aiops/child/nested/target", 0o640,
 			)
 			if err == nil {
 				t.Fatal("expected remote guard failure")
@@ -812,6 +900,27 @@ func TestSSHTransportUploadRemoteGuardsPreventTargetMutation(t *testing.T) {
 				t.Fatalf("remote diagnostic exceeded 4KiB: %d bytes", count)
 			}
 		})
+	}
+}
+
+func TestSSHTransportUploadModelsComponentValidationBlockingInsertion(t *testing.T) {
+	server := newLoopbackSSHServer(t)
+	model := trustedLoopbackGuard("/tmp/aurora-aiops", "/tmp/aurora-aiops/child/nested")
+	model.mutationAttempt = true
+	server.setGuardModel(model)
+	payload := []byte("trusted replacement")
+	err := NewSSHTransport(time.Second).Upload(
+		context.Background(), server.target(server.fingerprint()), CredentialSecret{Password: testSSHPassword},
+		bytes.NewReader(payload), int64(len(payload)), "/tmp/aurora-aiops/child/nested/target", 0o640,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !server.modeledMutationBlocked() {
+		t.Fatal("modeled insertion attempt was not blocked after validating every trusted component")
+	}
+	if got := server.modeledTarget(); !bytes.Equal(got, payload) {
+		t.Fatalf("modeled target = %q, want installer payload %q", got, payload)
 	}
 }
 

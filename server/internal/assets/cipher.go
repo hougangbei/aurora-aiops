@@ -8,9 +8,10 @@ import (
 	"errors"
 )
 
-const credentialKeyVersion = 1
-
-var credentialAssociatedData = []byte("aurora-aiops/asset-credential/v1")
+const (
+	credentialKeyVersion     = 1
+	credentialAssociatedData = "aurora-aiops/asset-credential/v1"
+)
 
 type CredentialCipher interface {
 	Encrypt(CredentialSecret) (CredentialEnvelope, error)
@@ -49,7 +50,7 @@ func (c *aesGCMCredentialCipher) Encrypt(secret CredentialSecret) (CredentialEnv
 	if _, err := rand.Read(nonce); err != nil {
 		return CredentialEnvelope{}, errors.New("cannot generate asset credential nonce")
 	}
-	ciphertext := c.aead.Seal(nil, nonce, plaintext, credentialAssociatedData)
+	ciphertext := c.aead.Seal(nil, nonce, plaintext, []byte(credentialAssociatedData))
 
 	return CredentialEnvelope{
 		Nonce:      nonce,
@@ -69,7 +70,7 @@ func (c *aesGCMCredentialCipher) Decrypt(envelope CredentialEnvelope) (Credentia
 		return CredentialSecret{}, errors.New("invalid asset credential ciphertext")
 	}
 
-	plaintext, err := c.aead.Open(nil, envelope.Nonce, envelope.Ciphertext, credentialAssociatedData)
+	plaintext, err := c.aead.Open(nil, envelope.Nonce, envelope.Ciphertext, []byte(credentialAssociatedData))
 	if err != nil {
 		return CredentialSecret{}, errors.New("cannot decrypt asset credential")
 	}

@@ -40,9 +40,9 @@ func TestAESGCMCredentialCipherDoesNotExposePlaintext(t *testing.T) {
 		t.Fatalf("NewAESGCMCredentialCipher() error = %v", err)
 	}
 	secret := CredentialSecret{
-		Password:   "p@ss",
-		PrivateKey: "private-key-material",
-		Passphrase: "phrase",
+		Password:   "aurora-password-canary-8f4f327d-ff3e-438a-8598-5cf4678ab934",
+		PrivateKey: "aurora-private-key-canary-18ca2ed6-bad6-423f-862b-e5a441cd1898",
+		Passphrase: "aurora-passphrase-canary-68a0c8fe-7b63-494e-bdbc-6aab4abce72d",
 	}
 
 	envelope, err := cipher.Encrypt(secret)

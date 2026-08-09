@@ -45,6 +45,32 @@ type loopbackSSHServer struct {
 	wg       sync.WaitGroup
 }
 
+type transientZeroEOFReader struct {
+	reader        *bytes.Reader
+	zeroReadsLeft int
+	onZero        func()
+}
+
+func (r *transientZeroEOFReader) Read(p []byte) (int, error) {
+	if r.reader.Len() > 0 {
+		return r.reader.Read(p)
+	}
+	if r.zeroReadsLeft > 0 {
+		r.zeroReadsLeft--
+		if r.onZero != nil {
+			r.onZero()
+		}
+		return 0, nil
+	}
+	return 0, io.EOF
+}
+
+type noProgressReader struct{}
+
+func (noProgressReader) Read([]byte) (int, error) {
+	return 0, nil
+}
+
 func newLoopbackSSHServer(t *testing.T) *loopbackSSHServer {
 	t.Helper()
 	_, hostKey, err := ed25519.GenerateKey(rand.Reader)
@@ -493,6 +519,58 @@ func TestSSHTransportUploadStreamsExactBytesAndQuotesPath(t *testing.T) {
 	wantCommand := "install -m 0750 /dev/stdin '/tmp/aurora-aiops/collector'\"'\"'s binary'"
 	if got := server.lastExecute(t); got != wantCommand {
 		t.Fatalf("exec request = %q, want %q", got, wantCommand)
+	}
+}
+
+func TestSSHTransportUploadToleratesTransientZeroReadAtEOF(t *testing.T) {
+	server := newLoopbackSSHServer(t)
+	payload := []byte("exact after transient zero")
+	reader := &transientZeroEOFReader{
+		reader:        bytes.NewReader(payload),
+		zeroReadsLeft: 2,
+	}
+	err := NewSSHTransport(time.Second).Upload(
+		context.Background(), server.target(server.fingerprint()),
+		CredentialSecret{Password: testSSHPassword}, reader, int64(len(payload)), "/opt/aurora-aiops/transient", 0o640,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := server.lastUpload(t); !bytes.Equal(got, payload) {
+		t.Fatalf("uploaded bytes = %q, want %q", got, payload)
+	}
+	if got, want := server.lastExecute(t), "install -m 0640 /dev/stdin '/opt/aurora-aiops/transient'"; got != want {
+		t.Fatalf("exec request = %q, want %q", got, want)
+	}
+}
+
+func TestSSHTransportUploadRejectsReaderWithNoProgress(t *testing.T) {
+	server := newLoopbackSSHServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err := NewSSHTransport(time.Second).Upload(
+		ctx, server.target(server.fingerprint()),
+		CredentialSecret{Password: testSSHPassword}, noProgressReader{}, 0, "/tmp/aurora-aiops/no-progress", 0o600,
+	)
+	if !errors.Is(err, io.ErrNoProgress) {
+		t.Fatalf("error = %v, want io.ErrNoProgress", err)
+	}
+}
+
+func TestSSHTransportUploadHonorsCancellationWhileProbingEOF(t *testing.T) {
+	server := newLoopbackSSHServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	reader := &transientZeroEOFReader{
+		reader:        bytes.NewReader(nil),
+		zeroReadsLeft: 1,
+		onZero:        cancel,
+	}
+	err := NewSSHTransport(time.Second).Upload(
+		ctx, server.target(server.fingerprint()),
+		CredentialSecret{Password: testSSHPassword}, reader, 0, "/tmp/aurora-aiops/cancel", 0o600,
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context canceled", err)
 	}
 }
 

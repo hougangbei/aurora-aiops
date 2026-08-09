@@ -22,6 +22,7 @@ const (
 	defaultSSHDialTimeout = 10 * time.Second
 	maxSSHOutputBytes     = int64(16 << 20)
 	maxSSHUploadBytes     = int64(1 << 30)
+	maxSSHEmptyReads      = 100
 )
 
 type RemoteTarget struct {
@@ -243,16 +244,7 @@ func (t *SSHTransport) Upload(ctx context.Context, target RemoteTarget, secret C
 	if _, err := io.CopyN(stdin, source, size); err != nil {
 		transferErr = fmt.Errorf("upload source shorter than declared size %d: %w", size, err)
 	} else {
-		var extra [1]byte
-		n, readErr := source.Read(extra[:])
-		switch {
-		case n > 0:
-			transferErr = fmt.Errorf("upload source exceeds declared size %d: %w", size, ErrInvalidInput)
-		case readErr == nil:
-			transferErr = fmt.Errorf("upload source length could not be verified: %w", ErrInvalidInput)
-		case !errors.Is(readErr, io.EOF):
-			transferErr = fmt.Errorf("verify upload source length: %w", readErr)
-		}
+		transferErr = verifyUploadSourceEOF(ctx, source, size)
 	}
 	closeErr := stdin.Close()
 	waitErr := session.Wait()
@@ -263,6 +255,28 @@ func (t *SSHTransport) Upload(ctx context.Context, target RemoteTarget, secret C
 		return errors.Join(transferErr, closeErr, waitErr)
 	}
 	return nil
+}
+
+func verifyUploadSourceEOF(ctx context.Context, source io.Reader, declaredSize int64) error {
+	var extra [1]byte
+	for emptyReads := 0; ; emptyReads++ {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		n, err := source.Read(extra[:])
+		if n > 0 {
+			return fmt.Errorf("upload source exceeds declared size %d: %w", declaredSize, ErrInvalidInput)
+		}
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("verify upload source length: %w", err)
+		}
+		if emptyReads+1 >= maxSSHEmptyReads {
+			return fmt.Errorf("verify upload source length after %d empty reads: %w", maxSSHEmptyReads, io.ErrNoProgress)
+		}
+	}
 }
 
 func (t *SSHTransport) dial(ctx context.Context, target RemoteTarget, config *ssh.ClientConfig) (*ssh.Client, error) {

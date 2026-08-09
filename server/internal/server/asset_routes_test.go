@@ -174,6 +174,14 @@ func TestAssetRoutesPatchDeleteConnectionCollectSnapshotAndSoftware(t *testing.T
 	if connection.Code != http.StatusConflict || decodeAssetEnvelope(t, connection)["code"] != "SSH_HOST_KEY_CONFIRMATION_REQUIRED" {
 		t.Fatalf("connection status=%d body=%s", connection.Code, connection.Body.String())
 	}
+	connectionData := decodeAssetEnvelope(t, connection)["data"].(map[string]any)
+	connectionServer, ok := connectionData["server"].(map[string]any)
+	if !ok || connectionServer["id"] != id || connectionData["fingerprint"] != "SHA256:host" || connectionData["trusted"] != false || connectionData["changed"] != false {
+		t.Fatalf("connection data=%+v", connectionData)
+	}
+	if strings.Contains(connection.Body.String(), "route-password-canary") {
+		t.Fatal("test-connection confirmation leaked credential")
+	}
 	confirmed := assetRouteRequest(t, h.router, http.MethodPost, "/api/v1/assets/servers/"+id+"/confirm-host-key", `{"fingerprint":"SHA256:host"}`)
 	if confirmed.Code != http.StatusOK {
 		t.Fatalf("confirm status=%d body=%s", confirmed.Code, confirmed.Body.String())
@@ -194,6 +202,25 @@ func TestAssetRoutesPatchDeleteConnectionCollectSnapshotAndSoftware(t *testing.T
 	deleted := assetRouteRequest(t, h.router, http.MethodDelete, "/api/v1/assets/servers/"+id, "")
 	if deleted.Code != http.StatusOK {
 		t.Fatalf("delete status=%d body=%s", deleted.Code, deleted.Body.String())
+	}
+}
+
+func TestAssetRoutesCollectMapsTypedHostKeyErrorToConflict(t *testing.T) {
+	h := newAssetRouteHarness(t)
+	created := assetRouteRequest(t, h.router, http.MethodPost, "/api/v1/assets/servers", validAssetCreateBody(false))
+	id := decodeAssetEnvelope(t, created)["data"].(map[string]any)["id"].(string)
+	h.remote.probeResult = "SHA256:old"
+	h.remote.probeErr = &assets.HostKeyError{Actual: "SHA256:old"}
+	confirmed := assetRouteRequest(t, h.router, http.MethodPost, "/api/v1/assets/servers/"+id+"/confirm-host-key", `{"fingerprint":"SHA256:old"}`)
+	if confirmed.Code != http.StatusOK {
+		t.Fatalf("confirm status=%d body=%s", confirmed.Code, confirmed.Body.String())
+	}
+	h.remote.run = func(assets.RemoteTarget, assets.CredentialSecret, string, int64) (assets.CommandResult, error) {
+		return assets.CommandResult{}, &assets.HostKeyError{Expected: "SHA256:old", Actual: "SHA256:new", Changed: true}
+	}
+	rec := assetRouteRequest(t, h.router, http.MethodPost, "/api/v1/assets/servers/"+id+"/collect", "")
+	if rec.Code != http.StatusConflict || decodeAssetEnvelope(t, rec)["code"] != "SSH_HOST_KEY_CONFIRMATION_REQUIRED" {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

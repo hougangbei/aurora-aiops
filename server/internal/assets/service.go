@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"reflect"
 	"strings"
 	"time"
@@ -16,6 +17,11 @@ import (
 )
 
 const collectionFailureMessage = "asset collection failed"
+
+const (
+	authenticationCommand     = "LC_ALL=C true"
+	authenticationOutputLimit = int64(1024)
+)
 
 type Service struct {
 	repo      *Repository
@@ -34,25 +40,29 @@ func NewService(repo *Repository, cipher CredentialCipher, remote RemoteTranspor
 }
 
 func (s *Service) Create(ctx context.Context, actor string, input CreateServerInput) (Server, error) {
+	serverID := uuid.NewString()
+	payload := credentialAuditPayload(input.AuthType)
 	name, address, username, port, err := validateServerFields(input.Name, input.Address, input.Username, input.SSHPort, true)
 	if err != nil {
+		_ = s.auditRecord(ctx, actor, "asset.server.create", serverID, "failure", payload)
 		return Server{}, err
 	}
 	if err := validateCredential(input.AuthType, input.Secret); err != nil {
+		_ = s.auditRecord(ctx, actor, "asset.server.create", serverID, "failure", payload)
 		return Server{}, err
 	}
 	now := s.clock()
 	server := Server{
-		ID: uuid.NewString(), Name: name, Address: address, Username: username, SSHPort: port,
+		ID: serverID, Name: name, Address: address, Username: username, SSHPort: port,
 		Status: ServerPending, CreatedAt: now, UpdatedAt: now,
 	}
 	if !credentialCipherAvailable(s.cipher) {
-		_ = s.auditRecord(ctx, actor, "asset.server.create", server.ID, "failure", auditPayload{AuthType: string(input.AuthType)})
+		_ = s.auditRecord(ctx, actor, "asset.server.create", server.ID, "failure", payload)
 		return Server{}, ErrEncryptionUnavailable
 	}
 	envelope, err := s.cipher.Encrypt(input.Secret)
 	if err != nil {
-		_ = s.auditRecord(ctx, actor, "asset.server.create", server.ID, "failure", auditPayload{AuthType: string(input.AuthType)})
+		_ = s.auditRecord(ctx, actor, "asset.server.create", server.ID, "failure", payload)
 		return Server{}, ErrEncryptionUnavailable
 	}
 	credential := StoredCredential{
@@ -60,18 +70,18 @@ func (s *Service) Create(ctx context.Context, actor string, input CreateServerIn
 	}
 	created, err := s.repo.CreateServer(ctx, server, credential)
 	if err != nil {
-		s.auditRecord(ctx, actor, "asset.server.create", server.ID, "failure", auditPayload{AuthType: string(input.AuthType)})
-		return Server{}, err
+		_ = s.auditRecord(ctx, actor, "asset.server.create", server.ID, "failure", payload)
+		return Server{}, safeCreateError(err)
 	}
 	if !input.TestConnection {
-		if err := s.auditRecord(ctx, actor, "asset.server.create", created.ID, "success", auditPayload{AuthType: string(input.AuthType)}); err != nil {
+		if err := s.auditRecord(ctx, actor, "asset.server.create", created.ID, "success", payload); err != nil {
 			return created, err
 		}
 		return created, nil
 	}
 
-	result, probeErr := s.probe(ctx, created)
-	payload := auditPayload{AuthType: string(input.AuthType), Fingerprint: result.Fingerprint}
+	result, probeErr := s.checkConnection(ctx, created)
+	payload.Fingerprint = result.Fingerprint
 	if probeErr != nil {
 		resultName := "failure"
 		var hostKeyErr *HostKeyError
@@ -90,10 +100,12 @@ func (s *Service) Create(ctx context.Context, actor string, input CreateServerIn
 func (s *Service) Update(ctx context.Context, actor, id string, input UpdateServerInput) (Server, error) {
 	current, err := s.repo.GetServer(ctx, id)
 	if err != nil {
-		return Server{}, err
+		_ = s.auditRecord(ctx, actor, "asset.server.update", id, "failure", auditPayload{})
+		return Server{}, safeLookupError(err)
 	}
 	name, address, username, port, err := validateServerFields(input.Name, input.Address, input.Username, input.SSHPort, true)
 	if err != nil {
+		_ = s.auditRecord(ctx, actor, "asset.server.update", id, "failure", auditPayload{})
 		return Server{}, err
 	}
 
@@ -105,9 +117,11 @@ func (s *Service) Update(ctx context.Context, actor, id string, input UpdateServ
 			authType = *input.AuthType
 		}
 		if input.Secret == nil {
+			_ = s.auditRecord(ctx, actor, "asset.server.update", id, "failure", credentialAuditPayload(authType))
 			return Server{}, invalidInput("credential secret is required when changing authentication type")
 		}
 		if err := validateCredential(authType, *input.Secret); err != nil {
+			_ = s.auditRecord(ctx, actor, "asset.server.update", id, "failure", credentialAuditPayload(authType))
 			return Server{}, err
 		}
 		if !credentialCipherAvailable(s.cipher) {
@@ -141,7 +155,7 @@ func (s *Service) Update(ctx context.Context, actor, id string, input UpdateServ
 	if auditErr := s.auditRecord(ctx, actor, "asset.server.update", id, result, payload); err == nil && auditErr != nil {
 		return updated, auditErr
 	}
-	return updated, err
+	return updated, safeMutationError(err)
 }
 
 func (s *Service) Delete(ctx context.Context, actor, id string) error {
@@ -153,7 +167,7 @@ func (s *Service) Delete(ctx context.Context, actor, id string) error {
 	if auditErr := s.auditRecord(ctx, actor, "asset.server.delete", id, result, auditPayload{}); err == nil && auditErr != nil {
 		return auditErr
 	}
-	return err
+	return safeMutationError(err)
 }
 
 func (s *Service) List(ctx context.Context) ([]Server, error) {
@@ -167,9 +181,10 @@ func (s *Service) Get(ctx context.Context, id string) (Server, error) {
 func (s *Service) TestConnection(ctx context.Context, actor, id string) (ConnectionResult, error) {
 	server, err := s.repo.GetServer(ctx, id)
 	if err != nil {
-		return ConnectionResult{}, err
+		_ = s.auditRecord(ctx, actor, "asset.server.test_connection", id, "failure", auditPayload{})
+		return ConnectionResult{}, safeLookupError(err)
 	}
-	result, err := s.probe(ctx, server)
+	result, err := s.checkConnection(ctx, server)
 	auditResult := "success"
 	if err != nil {
 		auditResult = "failure"
@@ -181,17 +196,19 @@ func (s *Service) TestConnection(ctx context.Context, actor, id string) (Connect
 	if auditErr := s.auditRecord(ctx, actor, "asset.server.test_connection", id, auditResult, auditPayload{Fingerprint: result.Fingerprint}); err == nil && auditErr != nil {
 		return result, auditErr
 	}
-	return result, err
+	return result, safeConnectionError(err)
 }
 
 func (s *Service) ConfirmHostKey(ctx context.Context, actor, id, fingerprint string) error {
 	fingerprint, err := validateTextField("fingerprint", fingerprint)
 	if err != nil {
+		_ = s.auditRecord(ctx, actor, "asset.server.confirm_host_key", id, "failure", auditPayload{})
 		return err
 	}
 	server, err := s.repo.GetServer(ctx, id)
 	if err != nil {
-		return err
+		_ = s.auditRecord(ctx, actor, "asset.server.confirm_host_key", id, "failure", auditPayload{})
+		return safeLookupError(err)
 	}
 	observed, probeErr := s.remote.ProbeHostKey(ctx, remoteTarget(server))
 	var hostKeyErr *HostKeyError
@@ -200,7 +217,10 @@ func (s *Service) ConfirmHostKey(ctx context.Context, actor, id, fingerprint str
 	}
 	if probeErr != nil && !errors.As(probeErr, &hostKeyErr) {
 		_ = s.auditRecord(ctx, actor, "asset.server.confirm_host_key", id, "failure", auditPayload{})
-		return probeErr
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		return errors.New("asset host-key probe failed")
 	}
 	if strings.TrimSpace(observed) == "" || observed != fingerprint {
 		_ = s.auditRecord(ctx, actor, "asset.server.confirm_host_key", id, "failure", auditPayload{})
@@ -214,48 +234,61 @@ func (s *Service) ConfirmHostKey(ctx context.Context, actor, id, fingerprint str
 	if auditErr := s.auditRecord(ctx, actor, "asset.server.confirm_host_key", id, result, auditPayload{Fingerprint: observed}); err == nil && auditErr != nil {
 		return auditErr
 	}
-	return err
+	return safeMutationError(err)
 }
 
 func (s *Service) Collect(ctx context.Context, actor, id string) (Snapshot, []SoftwareItem, error) {
 	server, err := s.repo.GetServer(ctx, id)
 	if err != nil {
-		return Snapshot{}, nil, err
+		_ = s.auditRecord(ctx, actor, "asset.server.collect", id, "failure", auditPayload{})
+		return Snapshot{}, nil, safeLookupError(err)
 	}
 	if !credentialCipherAvailable(s.cipher) {
+		s.failCollection(ctx, actor, id)
 		return Snapshot{}, nil, ErrEncryptionUnavailable
 	}
 	credential, err := s.repo.GetCredential(ctx, server.CredentialID)
 	if err != nil {
-		return Snapshot{}, nil, err
-	}
-	secret, err := s.cipher.Decrypt(credential.Envelope)
-	if err != nil {
-		_ = s.repo.MarkCollectionFailure(ctx, id, ServerError, collectionFailureMessage, s.clock())
-		_ = s.auditRecord(ctx, actor, "asset.server.collect", id, "failure", auditPayload{})
-		return Snapshot{}, nil, ErrEncryptionUnavailable
-	}
-	snapshot, software, collectErr := s.collector.Collect(ctx, server, secret)
-	clearCredentialSecret(&secret)
-	if collectErr != nil {
-		markErr := s.repo.MarkCollectionFailure(ctx, id, ServerError, collectionFailureMessage, s.clock())
-		_ = s.auditRecord(ctx, actor, "asset.server.collect", id, "failure", auditPayload{})
-		if markErr != nil {
-			return Snapshot{}, nil, markErr
-		}
+		s.failCollection(ctx, actor, id)
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return Snapshot{}, nil, ctxErr
 		}
 		return Snapshot{}, nil, errors.New(collectionFailureMessage)
 	}
+	secret, err := s.cipher.Decrypt(credential.Envelope)
+	if err != nil {
+		s.failCollection(ctx, actor, id)
+		return Snapshot{}, nil, ErrEncryptionUnavailable
+	}
+	defer clearCredentialSecret(&secret)
+	snapshot, software, collectErr := s.collector.Collect(ctx, server, secret)
+	if collectErr != nil {
+		s.failCollection(ctx, actor, id)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return Snapshot{}, nil, ctxErr
+		}
+		var hostKeyErr *HostKeyError
+		if errors.As(collectErr, &hostKeyErr) {
+			return Snapshot{}, nil, collectErr
+		}
+		return Snapshot{}, nil, errors.New(collectionFailureMessage)
+	}
 	if err := s.repo.SaveCollection(ctx, server, snapshot, software); err != nil {
-		_ = s.auditRecord(ctx, actor, "asset.server.collect", id, "failure", auditPayload{})
-		return Snapshot{}, nil, err
+		s.failCollection(ctx, actor, id)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return Snapshot{}, nil, ctxErr
+		}
+		return Snapshot{}, nil, errors.New(collectionFailureMessage)
 	}
 	if err := s.auditRecord(ctx, actor, "asset.server.collect", id, "success", auditPayload{}); err != nil {
 		return snapshot, software, err
 	}
 	return snapshot, software, nil
+}
+
+func (s *Service) failCollection(ctx context.Context, actor, id string) {
+	_ = s.repo.MarkCollectionFailure(ctx, id, ServerError, collectionFailureMessage, s.clock())
+	_ = s.auditRecord(ctx, actor, "asset.server.collect", id, "failure", auditPayload{})
 }
 
 func (s *Service) LatestSnapshot(ctx context.Context, id string) (Snapshot, error) {
@@ -271,7 +304,7 @@ func (s *Service) probe(ctx context.Context, server Server) (ConnectionResult, e
 		return ConnectionResult{}, errors.New("asset remote transport is unavailable")
 	}
 	fingerprint, err := s.remote.ProbeHostKey(ctx, remoteTarget(server))
-	result := ConnectionResult{Fingerprint: fingerprint, Trusted: err == nil}
+	result := ConnectionResult{Fingerprint: fingerprint}
 	var hostKeyErr *HostKeyError
 	if errors.As(err, &hostKeyErr) {
 		if result.Fingerprint == "" {
@@ -280,6 +313,47 @@ func (s *Service) probe(ctx context.Context, server Server) (ConnectionResult, e
 		result.Changed = hostKeyErr.Changed
 	}
 	return result, err
+}
+
+func (s *Service) checkConnection(ctx context.Context, server Server) (ConnectionResult, error) {
+	result, err := s.probe(ctx, server)
+	if err != nil {
+		return result, err
+	}
+	if server.HostKeyFingerprint == "" {
+		return result, &HostKeyError{Actual: result.Fingerprint}
+	}
+	if result.Fingerprint != server.HostKeyFingerprint {
+		return result, &HostKeyError{Expected: server.HostKeyFingerprint, Actual: result.Fingerprint, Changed: true}
+	}
+	if !credentialCipherAvailable(s.cipher) {
+		return result, ErrEncryptionUnavailable
+	}
+	credential, err := s.repo.GetCredential(ctx, server.CredentialID)
+	if err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return result, ctxErr
+		}
+		return result, errors.New("asset authentication failed")
+	}
+	secret, err := s.cipher.Decrypt(credential.Envelope)
+	if err != nil {
+		return result, ErrEncryptionUnavailable
+	}
+	defer clearCredentialSecret(&secret)
+	commandResult, err := s.remote.Run(ctx, remoteTarget(server), secret, authenticationCommand, authenticationOutputLimit)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return result, ctxErr
+	}
+	var hostKeyErr *HostKeyError
+	if errors.As(err, &hostKeyErr) {
+		return result, err
+	}
+	if err != nil || commandResult.ExitCode != 0 || commandResult.Truncated {
+		return result, errors.New("asset authentication failed")
+	}
+	result.Trusted = true
+	return result, nil
 }
 
 func remoteTarget(server Server) RemoteTarget {
@@ -320,7 +394,7 @@ func validateServerFields(name, address, username string, port int, zeroMeansDef
 	if name, err = validateTextField("name", name); err != nil {
 		return "", "", "", 0, err
 	}
-	if address, err = validateTextField("address", address); err != nil {
+	if address, err = validateAddress(address); err != nil {
 		return "", "", "", 0, err
 	}
 	if username, err = validateTextField("username", username); err != nil {
@@ -336,16 +410,63 @@ func validateServerFields(name, address, username string, port int, zeroMeansDef
 }
 
 func validateTextField(field, value string) (string, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return "", invalidInput(field + " is required")
-	}
 	for _, r := range value {
 		if r == '\x00' || unicode.IsControl(r) || unicode.In(r, unicode.Cf, unicode.Zl, unicode.Zp) {
 			return "", invalidInput(field + " contains unsupported characters")
 		}
 	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", invalidInput(field + " is required")
+	}
 	return value, nil
+}
+
+func validateAddress(value string) (string, error) {
+	value, err := validateTextField("address", value)
+	if err != nil {
+		return "", err
+	}
+	if parsed := net.ParseIP(value); parsed != nil {
+		return parsed.String(), nil
+	}
+	if strings.HasSuffix(value, ".") {
+		value = strings.TrimSuffix(value, ".")
+	}
+	if value == "" || len(value) > 253 || strings.HasSuffix(value, ".") {
+		return "", invalidInput("address must be an IP address or DNS hostname")
+	}
+	if looksLikeDottedIPv4(value) {
+		return "", invalidInput("address contains an invalid IPv4 address")
+	}
+	value = strings.ToLower(value)
+	for _, label := range strings.Split(value, ".") {
+		if len(label) < 1 || len(label) > 63 || !asciiAlphaNumeric(label[0]) || !asciiAlphaNumeric(label[len(label)-1]) {
+			return "", invalidInput("address must be an IP address or DNS hostname")
+		}
+		for index := 1; index < len(label)-1; index++ {
+			if !asciiAlphaNumeric(label[index]) && label[index] != '-' {
+				return "", invalidInput("address must be an IP address or DNS hostname")
+			}
+		}
+	}
+	return value, nil
+}
+
+func looksLikeDottedIPv4(value string) bool {
+	if strings.Count(value, ".") != 3 {
+		return false
+	}
+	for index := 0; index < len(value); index++ {
+		if value[index] != '.' && (value[index] < '0' || value[index] > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+func asciiAlphaNumeric(value byte) bool {
+	return value >= 'a' && value <= 'z' || value >= '0' && value <= '9'
 }
 
 func validateCredential(authType CredentialAuthType, secret CredentialSecret) error {
@@ -366,6 +487,47 @@ func validateCredential(authType CredentialAuthType, secret CredentialSecret) er
 
 func invalidInput(message string) error {
 	return fmt.Errorf("%s: %w", message, ErrInvalidInput)
+}
+
+func credentialAuditPayload(authType CredentialAuthType) auditPayload {
+	if authType != AuthPassword && authType != AuthPrivateKey {
+		return auditPayload{}
+	}
+	return auditPayload{AuthType: string(authType)}
+}
+
+func safeCreateError(err error) error {
+	return safeMutationError(err)
+}
+
+func safeLookupError(err error) error {
+	if err == nil || errors.Is(err, ErrNotFound) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	return errors.New("asset lookup failed")
+}
+
+func safeMutationError(err error) error {
+	if err == nil || errors.Is(err, ErrNotFound) || errors.Is(err, ErrNameConflict) || errors.Is(err, ErrInvalidInput) ||
+		errors.Is(err, ErrEncryptionUnavailable) || errors.Is(err, ErrActiveTask) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	var hostKeyErr *HostKeyError
+	if errors.As(err, &hostKeyErr) {
+		return err
+	}
+	return errors.New("asset mutation failed")
+}
+
+func safeConnectionError(err error) error {
+	if err == nil || errors.Is(err, ErrEncryptionUnavailable) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	var hostKeyErr *HostKeyError
+	if errors.As(err, &hostKeyErr) {
+		return err
+	}
+	return errors.New("asset connection test failed")
 }
 
 func credentialCipherAvailable(value CredentialCipher) bool {

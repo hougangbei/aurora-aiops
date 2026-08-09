@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -125,6 +126,10 @@ func (c *Collector) Collect(ctx context.Context, server Server, secret Credentia
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return Snapshot{}, nil, ctxErr
 	}
+	var hostKeyErr *HostKeyError
+	if errors.As(err, &hostKeyErr) {
+		return Snapshot{}, nil, err
+	}
 	if err != nil || result.ExitCode != 0 {
 		return Snapshot{}, nil, fmt.Errorf("base probe failed")
 	}
@@ -201,6 +206,10 @@ func (c *Collector) runOptional(ctx context.Context, target RemoteTarget, secret
 	result, err := c.remote.Run(ctx, target, secret, command.Command, command.Limit)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return CommandResult{}, nil, ctxErr
+	}
+	var hostKeyErr *HostKeyError
+	if errors.As(err, &hostKeyErr) {
+		return CommandResult{}, nil, err
 	}
 	var reason string
 	switch {

@@ -190,7 +190,11 @@ func registerAssetRoutes(group *gin.RouterGroup, svc *assets.Service) {
 	servers.POST("/:id/test-connection", RequireOperator(), func(c *gin.Context) {
 		result, err := svc.TestConnection(c.Request.Context(), currentActorName(c), c.Param("id"))
 		if err != nil {
-			respondAssetConnectionError(c, err, result)
+			var server *assets.Server
+			if current, getErr := svc.Get(c.Request.Context(), c.Param("id")); getErr == nil {
+				server = &current
+			}
+			respondAssetConnectionError(c, err, result, server)
 			return
 		}
 		c.JSON(http.StatusOK, response.Success(assetConnectionDTO(result)))
@@ -250,12 +254,20 @@ func decodeAssetJSON(c *gin.Context, destination any) error {
 	return nil
 }
 
-func respondAssetConnectionError(c *gin.Context, err error, result assets.ConnectionResult) {
+func respondAssetConnectionError(c *gin.Context, err error, result assets.ConnectionResult, server *assets.Server) {
 	var hostKeyErr *assets.HostKeyError
 	if errors.As(err, &hostKeyErr) {
+		data := gin.H{
+			"fingerprint": result.Fingerprint,
+			"trusted":     result.Trusted,
+			"changed":     result.Changed,
+		}
+		if server != nil {
+			data["server"] = assetServerDTO(*server)
+		}
 		c.JSON(http.StatusConflict, response.Envelope{
 			Code: "SSH_HOST_KEY_CONFIRMATION_REQUIRED", Message: "SSH host key confirmation is required",
-			Data: assetConnectionDTO(result),
+			Data: data,
 		})
 		return
 	}

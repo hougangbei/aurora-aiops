@@ -472,6 +472,37 @@ func TestCollectorRejectsRequiredProbeFailuresAndInvalidBase(t *testing.T) {
 	}
 }
 
+func TestCollectorPreservesTypedHostKeyErrorFromRequiredProbe(t *testing.T) {
+	hostKeyErr := &HostKeyError{Expected: "SHA256:old", Actual: "SHA256:new", Changed: true}
+	responses := collectorResponses(collectorBase("ID=debian\nVERSION_ID=12\n", "amd64"))
+	responses[collectorCommandsForTest()[collectorCommandBase].Command] = collectorFakeResponse{err: hostKeyErr}
+	remote := &collectorFakeRemote{responses: responses}
+
+	_, _, err := NewCollector(remote, time.Now).Collect(context.Background(), Server{
+		ID: "server-1", Address: "192.0.2.10", SSHPort: 22, Username: "root", HostKeyFingerprint: hostKeyErr.Expected,
+	}, CredentialSecret{Password: "secret"})
+	var got *HostKeyError
+	if !errors.As(err, &got) || got != hostKeyErr || !errors.Is(err, ErrHostKeyChanged) {
+		t.Fatalf("error=%#v want original typed host-key error %#v", err, hostKeyErr)
+	}
+}
+
+func TestCollectorPreservesTypedHostKeyErrorFromOptionalInventoryCommand(t *testing.T) {
+	hostKeyErr := &HostKeyError{Expected: "SHA256:old", Actual: "SHA256:new", Changed: true}
+	commands := collectorCommandsForTest()
+	responses := collectorResponses(collectorBase("ID=debian\nVERSION_ID=12\n", "amd64"))
+	responses[commands[collectorCommandDebian].Command] = collectorFakeResponse{err: hostKeyErr}
+	remote := &collectorFakeRemote{responses: responses}
+
+	_, _, err := NewCollector(remote, time.Now).Collect(context.Background(), Server{
+		ID: "server-1", Address: "192.0.2.10", SSHPort: 22, Username: "root", HostKeyFingerprint: hostKeyErr.Expected,
+	}, CredentialSecret{Password: "secret"})
+	var got *HostKeyError
+	if !errors.As(err, &got) || got != hostKeyErr || !errors.Is(err, ErrHostKeyChanged) {
+		t.Fatalf("error=%#v want original typed host-key error %#v", err, hostKeyErr)
+	}
+}
+
 func TestCollectorOptionalFailuresAndTruncationBecomeSafeWarnings(t *testing.T) {
 	commands := collectorCommandsForTest()
 	responses := collectorResponses(collectorBase("ID=ubuntu\nVERSION_ID=22.04\n", "x86_64"))

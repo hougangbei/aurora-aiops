@@ -17,11 +17,11 @@ import (
 	"k8s.io/client-go/rest"
 	metricsfake "k8s.io/metrics/pkg/client/clientset/versioned/fake"
 
-	"github.com/heihuzicity-tech/kubejojo/server/internal/auth"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/kube"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/response"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/service"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/store"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/auth"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/kube"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/response"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/service"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/store"
 )
 
 func seedUser(t *testing.T, repo auth.Repository, id, username, password string, role auth.Role) {
@@ -122,6 +122,9 @@ func TestPasswordLoginSetsHttpOnlySession(t *testing.T) {
 	if cookie == nil {
 		t.Fatal("no session cookie set")
 	}
+	if cookie.Name != "aurora-aiops_session" {
+		t.Fatalf("cookie name=%q want aurora-aiops_session", cookie.Name)
+	}
 	if !cookie.HttpOnly {
 		t.Fatalf("cookie not HttpOnly: %+v", cookie)
 	}
@@ -171,6 +174,42 @@ func TestMeRequiresSession(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"role":"admin"`) {
 		t.Fatalf("body=%s", rec.Body.String())
+	}
+}
+
+func TestLegacySessionCookieRemainsValidDuringRename(t *testing.T) {
+	router := newAuthTestRouter(t)
+	_, cookie := doLogin(t, router, "admin", "correct-password")
+	cookie.Name = "kubejojo_session"
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("legacy cookie status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestLogoutClearsAuroraAndLegacyCookieNames(t *testing.T) {
+	router := newAuthTestRouter(t)
+	_, cookie := doLogin(t, router, "admin", "correct-password")
+	cookie.Name = "kubejojo_session"
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	cleared := map[string]bool{}
+	for _, responseCookie := range rec.Result().Cookies() {
+		if responseCookie.MaxAge < 0 {
+			cleared[responseCookie.Name] = true
+		}
+	}
+	if !cleared["aurora-aiops_session"] || !cleared["kubejojo_session"] {
+		t.Fatalf("cleared cookies=%v want Aurora and legacy names", cleared)
 	}
 }
 

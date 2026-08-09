@@ -11,9 +11,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/heihuzicity-tech/kubejojo/server/internal/aiops"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/audit"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/policy"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/aiops"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/audit"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/policy"
 )
 
 var (

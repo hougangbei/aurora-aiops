@@ -6,13 +6,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heihuzicity-tech/kubejojo/server/internal/auth"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/response"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/service"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/auth"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/response"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/service"
 )
 
 const (
-	sessionCookieName = "kubejojo_session"
+	sessionCookieName = "aurora-aiops_session"
 	actorContextKey   = "authUser"
 	// sessionTTL bounds platform session lifetime. It is also passed to
 	// auth.NewService so the cookie MaxAge and the server-side expiry agree.
@@ -24,7 +24,7 @@ const (
 // 401 UNAUTHORIZED when the session is missing or invalid.
 func RequireSession(authService *auth.Service, clusterService *service.ClusterService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		raw, err := c.Cookie(sessionCookieName)
+		raw, err := readSessionCookie(c)
 		if err != nil || raw == "" {
 			c.JSON(http.StatusUnauthorized, response.Failure("UNAUTHORIZED", "未登录或会话已过期"))
 			c.Abort()

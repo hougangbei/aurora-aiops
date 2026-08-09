@@ -1,10 +1,10 @@
-# kubejojo
+# Aurora AIOps
 
 面向企业内部运维场景的 Kubernetes 单集群管理控制台。
 
-`kubejojo` 不是一个只看资源列表的 Demo。它把集群总览、资源拓扑、工作负载排障、YAML 运维、RBAC 资源、版本更新与回滚放在同一套控制台里，适合用于企业内部单集群的日常巡检、问题定位和轻量运维。
+`Aurora AIOps` 不是一个只看资源列表的 Demo。它把集群总览、资源拓扑、工作负载排障、YAML 运维、RBAC 资源、版本更新与回滚放在同一套控制台里，适合用于企业内部单集群的日常巡检、问题定位和轻量运维。
 
-![kubejojo 集群总览](docs/assets/readme/overview.jpg)
+![Aurora AIOps 集群总览](docs/assets/readme/overview.jpg)
 
 ## 核心亮点
 
@@ -92,7 +92,7 @@ RBAC 资源可以按 ServiceAccount、Role、ClusterRole、Binding 维度查看�
 
 - [单集群接入与平台认证架构](docs/architecture/single-cluster-access.md)
 - [AIOps API v1 文档](docs/aiops/api-v1.md)
-- [qd → kubejojo API 迁移矩阵](docs/aiops/migration-matrix.md)
+- [qd → aurora-aiops API 迁移矩阵](docs/aiops/migration-matrix.md)
 - [第三方依赖与授权结论](docs/third-party-and-ownership.md)
 
 更细的产品边界见 [产品方案与需求基线](docs/产品方案与需求基线.md)。
@@ -112,8 +112,8 @@ RBAC 资源可以按 ServiceAccount、Role、ClusterRole、Binding 维度查看�
 
 ```bash
 cd server
-export KUBEJOJO_KUBECONFIG=/path/to/your/dev-kubeconfig
-go run ./cmd/kubejojo
+export AURORA_AIOPS_KUBECONFIG=/path/to/your/dev-kubeconfig
+go run ./cmd/aurora-aiops
 ```
 
 默认监听：
@@ -122,7 +122,7 @@ go run ./cmd/kubejojo
 
 后端按以下顺序选择集群身份：
 
-1. `KUBEJOJO_KUBECONFIG`（显式 kubeconfig，最高优先级）
+1. `AURORA_AIOPS_KUBECONFIG`（显式 kubeconfig，最高优先级）
 2. `KUBECONFIG`（取第一个非空路径）
 3. 集群内 ServiceAccount 身份（运行在 Pod 内时自动启用，不挂载 kubeconfig）
 4. `~/.kube/config`（本地开发回退）
@@ -150,11 +150,11 @@ npm run dev
 实验环境可以用下面的方式快速创建管理员 Token：
 
 ```bash
-kubectl create serviceaccount kubejojo-dev -n kube-system
-kubectl create clusterrolebinding kubejojo-dev \
+kubectl create serviceaccount aurora-aiops-dev -n kube-system
+kubectl create clusterrolebinding aurora-aiops-dev \
   --clusterrole=cluster-admin \
-  --serviceaccount=kube-system:kubejojo-dev
-kubectl create token kubejojo-dev -n kube-system
+  --serviceaccount=kube-system:aurora-aiops-dev
+kubectl create token aurora-aiops-dev -n kube-system
 ```
 
 正式环境建议按最小权限原则绑定 `Role` 或 `ClusterRole`，不要直接使用 `cluster-admin`。
@@ -169,7 +169,9 @@ kubectl create token kubejojo-dev -n kube-system
 
 release 构建会先跑 `npm test`、`go vet ./...`、`go test ./...`，任一失败立即退出；前端资源内嵌进单一 Go 二进制，无 Node 即可独立启动。
 
-容器/集群部署清单见 `deploy/kubernetes/`：默认只读 RBAC + in-cluster ServiceAccount 身份（**不挂载、不选择 kubeconfig**），可执行 RBAC 为可选样例；容器只读 rootfs、非 root、DB 目录 volume 持久化，bootstrap admin 与 LLM API Key 走 Secret env。安装步骤见 `deploy/kubernetes/README.md`。Systemd 服务模板 `deploy/kubejojo.service` 已带 AIOps DB 与模型端点环境变量占位。
+容器/集群部署清单见 `deploy/kubernetes/`：默认只读 RBAC + in-cluster ServiceAccount 身份（**不挂载、不选择 kubeconfig**），可执行 RBAC 为可选样例；容器只读 rootfs、非 root、DB 目录 volume 持久化，bootstrap admin 与 LLM API Key 走 Secret env。安装步骤见 `deploy/kubernetes/README.md`。Systemd 服务模板 `deploy/aurora-aiops.service` 已带 AIOps DB 与模型端点环境变量占位。
+
+已有旧品牌部署请按 [Aurora AIOps 品牌迁移指南](docs/migrations/kubejojo-to-aurora-aiops.md) 备份、迁移和回滚。
 
 构建指定平台 release：
 
@@ -193,14 +195,14 @@ release 产物包含：
 
 - 版本化 `tar.gz`
 - `checksums.txt`
-- 内嵌前端静态资源的 `kubejojo` 二进制
-- `kubejojo.service`
+- 内嵌前端静态资源的 `aurora-aiops` 二进制
+- `aurora-aiops.service`
 - `latest` 软链接
 
 查看二进制版本：
 
 ```bash
-./server/dist/release/<package-dir>/kubejojo --version
+./server/dist/release/<package-dir>/aurora-aiops --version
 ```
 
 ## 在线更新配置
@@ -208,24 +210,24 @@ release 产物包含：
 启用在线更新相关环境变量：
 
 ```bash
-KUBEJOJO_UPDATE_ENABLED=true
-KUBEJOJO_UPDATE_ALLOW_PRERELEASES=true
-KUBEJOJO_UPDATE_REPOSITORY=heihuzicity-tech/kubejojo
-KUBEJOJO_UPDATE_ALLOWED_SUBJECTS=system:serviceaccount:kube-system:kubejojo-dev
-KUBEJOJO_UPDATE_GITHUB_TOKEN=<optional-github-token>
-KUBEJOJO_UPDATE_TARGET_PATH=<optional-installed-binary-path>
+AURORA_AIOPS_UPDATE_ENABLED=true
+AURORA_AIOPS_UPDATE_ALLOW_PRERELEASES=true
+AURORA_AIOPS_UPDATE_REPOSITORY=heihuzicity-tech/aurora-aiops
+AURORA_AIOPS_UPDATE_ALLOWED_SUBJECTS=system:serviceaccount:kube-system:aurora-aiops-dev
+AURORA_AIOPS_UPDATE_GITHUB_TOKEN=<optional-github-token>
+AURORA_AIOPS_UPDATE_TARGET_PATH=<optional-installed-binary-path>
 ```
 
 配置说明：
 
 | 环境变量 | 说明 |
 | --- | --- |
-| `KUBEJOJO_UPDATE_ENABLED` | 是否启用在线更新入口。 |
-| `KUBEJOJO_UPDATE_ALLOW_PRERELEASES` | 是否允许检测和安装 `rc`、`beta`、`alpha` 预发布版本。 |
-| `KUBEJOJO_UPDATE_REPOSITORY` | GitHub Releases 仓库，默认 `heihuzicity-tech/kubejojo`。 |
-| `KUBEJOJO_UPDATE_ALLOWED_SUBJECTS` | 允许执行更新、回滚、重启的 Kubernetes 身份白名单，逗号分隔。 |
-| `KUBEJOJO_UPDATE_GITHUB_TOKEN` | 可选，用于提升 GitHub API 访问稳定性和速率限制配额。 |
-| `KUBEJOJO_UPDATE_TARGET_PATH` | 可选，显式指定受管二进制路径，便于 release 模式下准确执行更新和回滚。 |
+| `AURORA_AIOPS_UPDATE_ENABLED` | 是否启用在线更新入口。 |
+| `AURORA_AIOPS_UPDATE_ALLOW_PRERELEASES` | 是否允许检测和安装 `rc`、`beta`、`alpha` 预发布版本。 |
+| `AURORA_AIOPS_UPDATE_REPOSITORY` | GitHub Releases 仓库，默认 `heihuzicity-tech/aurora-aiops`。 |
+| `AURORA_AIOPS_UPDATE_ALLOWED_SUBJECTS` | 允许执行更新、回滚、重启的 Kubernetes 身份白名单，逗号分隔。 |
+| `AURORA_AIOPS_UPDATE_GITHUB_TOKEN` | 可选，用于提升 GitHub API 访问稳定性和速率限制配额。 |
+| `AURORA_AIOPS_UPDATE_TARGET_PATH` | 可选，显式指定受管二进制路径，便于 release 模式下准确执行更新和回滚。 |
 
 ## GitHub Release
 
@@ -251,7 +253,7 @@ git push origin v0.1.1
 ## 项目结构
 
 ```text
-kubejojo
+aurora-aiops
 ├── docs/                 # 产品边界、操作指南和 README 截图素材
 ├── scripts/              # release 构建脚本
 ├── server/               # Go 后端、Kubernetes client、更新服务、静态资源嵌入

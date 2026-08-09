@@ -29,7 +29,7 @@ const incident: Incident = {
   summary: 'CrashLoopBackOff：api-0',
   severity: 'warning',
   status: 'collecting',
-  namespace: 'kubejojo-lab',
+  namespace: 'aurora-aiops-lab',
   resourceKind: 'Pod',
   resourceName: 'api-0',
   createdAt: '2026-08-09T04:00:00.000Z',

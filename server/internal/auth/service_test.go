@@ -10,7 +10,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/heihuzicity-tech/kubejojo/server/internal/store"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/store"
 )
 
 func openTestRepo(t *testing.T) Repository {

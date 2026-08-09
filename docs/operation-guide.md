@@ -1,10 +1,10 @@
-# kubejojo 开发与实验集群操作指南
+# Aurora AIOps 开发与实验集群操作指南
 
 ## 1. 文档范围
 
-- 本文档用于说明 `kubejojo` 当前对接的本地实验集群信息、日常运维入口以及本机开发联调方式。
+- 本文档用于说明 `Aurora AIOps` 当前对接的本地实验集群信息、日常运维入口以及本机开发联调方式。
 - 当前实验环境对应仓库：`/Users/zhangya/workspace/k8s-dev`
-- 当前产品仓库：`git@github.com:heihuzicity-tech/kubejojo.git`
+- 当前产品仓库：`git@github.com:heihuzicity-tech/aurora-aiops.git`
 
 ## 2. 实验集群概况
 
@@ -72,7 +72,7 @@ kubectl get nodes -o wide
 
 后端启动时按以下顺序读取集群配置：
 
-1. `KUBEJOJO_KUBECONFIG`
+1. `AURORA_AIOPS_KUBECONFIG`
 2. `KUBECONFIG`
 3. `~/.kube/config`
 
@@ -86,8 +86,8 @@ kubectl get nodes -o wide
 
 ```bash
 cd <repo-root>/server
-export KUBEJOJO_KUBECONFIG=/path/to/your/dev-kubeconfig
-go run ./cmd/kubejojo
+export AURORA_AIOPS_KUBECONFIG=/path/to/your/dev-kubeconfig
+go run ./cmd/aurora-aiops
 ```
 
 默认监听端口：
@@ -132,11 +132,11 @@ npm run dev
 仅用于实验环境的管理员 Token 示例：
 
 ```bash
-kubectl create serviceaccount kubejojo-dev -n kube-system
-kubectl create clusterrolebinding kubejojo-dev \
+kubectl create serviceaccount aurora-aiops-dev -n kube-system
+kubectl create clusterrolebinding aurora-aiops-dev \
   --clusterrole=cluster-admin \
-  --serviceaccount=kube-system:kubejojo-dev
-kubectl create token kubejojo-dev -n kube-system
+  --serviceaccount=kube-system:aurora-aiops-dev
+kubectl create token aurora-aiops-dev -n kube-system
 ```
 
 建议：

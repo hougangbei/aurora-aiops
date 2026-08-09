@@ -1,4 +1,4 @@
-module github.com/heihuzicity-tech/kubejojo/server
+module github.com/heihuzicity-tech/aurora-aiops/server
 
 go 1.25.1
 

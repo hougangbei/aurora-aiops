@@ -1,6 +1,6 @@
 # AIOps API v1
 
-本页记录 kubejojo Go 后端已实现的 `/api/v1` 接口。当前阶段（计划 01 + 01A + 02）落地了 Incident 的创建与查询、平台账号登录、共享集群连接状态与节点发现、证据链与多智能体诊断工作流（Evidence / AgentRun / Reanalyze / SSE 事件流）；审批、执行、工具调用、ChatOps、集成配置在后续计划中实现。
+本页记录 Aurora AIOps Go 后端已实现的 `/api/v1` 接口。当前阶段（计划 01 + 01A + 02）落地了 Incident 的创建与查询、平台账号登录、共享集群连接状态与节点发现、证据链与多智能体诊断工作流（Evidence / AgentRun / Reanalyze / SSE 事件流）；审批、执行、工具调用、ChatOps、集成配置在后续计划中实现。
 
 所有接口返回统一信封 `{code, message, data}`：
 
@@ -9,7 +9,7 @@
 
 ## 认证入口
 
-平台使用账号密码 + 服务端 Session。`POST /api/v1/auth/login` 是 `/api/v1` 下唯一匿名入口，登录成功后通过 `Set-Cookie: kubejojo_session`（HttpOnly + SameSite=Lax）建立会话。其余接口均需携带该 Cookie；后端通过共享 kubeconfig 访问集群，**不再接收任何请求级 Kubernetes Token**。前端 Axios 使用 `withCredentials: true` 同源携带 Cookie。
+平台使用账号密码 + 服务端 Session。`POST /api/v1/auth/login` 是 `/api/v1` 下唯一匿名入口，登录成功后通过 `Set-Cookie: aurora-aiops_session`（HttpOnly + SameSite=Lax）建立会话。其余接口均需携带该 Cookie；后端通过共享 kubeconfig 访问集群，**不再接收任何请求级 Kubernetes Token**。前端 Axios 使用 `withCredentials: true` 同源携带 Cookie。
 
 ### 账号 API
 
@@ -75,7 +75,7 @@ Incident 状态迁移是严格白名单，非允许迁移返回 `INVALID_INCIDEN
 | `executing` | `resolved`, `failed` |
 | `resolved` / `rejected` / `failed` | （终态） |
 
-创建 Incident 会自动触发五阶段诊断工作流：`triage → collector → root_cause → remediation → risk_review`，状态随之推进 `received → triaging → collecting → analyzing → proposing → awaiting_approval`。每个角色记录一条 `AgentRun`；角色输出校验失败或模型不可用时 Incident 进入 `failed` 终态且**不会执行任何动作**。模型未配置（`KUBEJOJO_LLM_BASE_URL` 为空）时仅运行确定性的 triage/collector，根因及后续角色记录为 `skipped` / `model_unavailable`，Incident 停在 `collecting`。
+创建 Incident 会自动触发五阶段诊断工作流：`triage → collector → root_cause → remediation → risk_review`，状态随之推进 `received → triaging → collecting → analyzing → proposing → awaiting_approval`。每个角色记录一条 `AgentRun`；角色输出校验失败或模型不可用时 Incident 进入 `failed` 终态且**不会执行任何动作**。模型未配置（`AURORA_AIOPS_LLM_BASE_URL` 为空）时仅运行确定性的 triage/collector，根因及后续角色记录为 `skipped` / `model_unavailable`，Incident 停在 `collecting`。
 
 每个 AgentRun 保存 role、attempt、status、summary、输出 JSON、模型、Token 用量、起止时间与错误。每步开始/结束都会先持久化再广播一条 Incident 事件（`run_started` / `run_completed` / `incident_updated`），供 SSE 消费。
 
@@ -168,7 +168,7 @@ Incident 状态迁移是严格白名单，非允许迁移返回 `INVALID_INCIDEN
 
 ## 与 qd 旧接口的对应
 
-| kubejojo（Go） | qd（Node，只读参考） |
+| aurora-aiops（Go） | qd（Node，只读参考） |
 | --- | --- |
 | `POST /api/v1/aiops/incidents` | `POST /api/aiops/webhooks/alerts`（告警进入） |
 | `GET /api/v1/aiops/incidents` | `GET /api/aiops/incidents` |

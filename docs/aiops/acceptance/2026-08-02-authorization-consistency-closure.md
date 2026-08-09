@@ -38,11 +38,11 @@
 - `npm test -- --run` → **PASS**: 10 test files, 45 tests, all green (includes `ApprovalDialog.test.tsx` 4 tests: fail-closed without risk review, approve hidden on high/non-approvable effective review, approve enabled after 8-char reason, disabled during pending request).
 - `npm run build` → **PASS**: Vite build exited 0, 10 229 modules transformed. Known non-blocking bundle-size warning remains (`index-CVxeK7Pa.js` 4 763 kB / 1 396 kB gzip) — stage-two work.
 - `SKIP_NPM_INSTALL=1 ./scripts/build-release.sh` → **PASS**. Release archive:
-  `server/dist/release/kubejojo_0.1.1_darwin_arm64.tar.gz` (19 319 378 bytes), checksums at `server/dist/release/checksums.txt`.
+  `server/dist/release/aurora-aiops_0.1.1_darwin_arm64.tar.gz` (19 319 378 bytes), checksums at `server/dist/release/checksums.txt`.
 
 ## Manifest checks and authorization simulation (Task 8 Step 3)
 
-- `./scripts/verify-kubernetes-manifests.sh` → **PASS** (exit 0) run with `KUBECONFIG` pointing at the dev cluster. All client-side dry-runs (`kubectl apply --dry-run=client --validate=false` for namespace/readonly RBAC/PVC/deployment/service, and separately for executor RBAC; `kubectl auth reconcile --dry-run=client` for both RBAC files) succeeded. Static assertions passed: no `KUBEJOJO_KUBECONFIG`/`kubejojo-kubeconfig`/`name: kubeconfig` in `deployment.yaml`; `rbac.yaml` contains `kind: ClusterRole` and `kind: ClusterRoleBinding`; `deployment.yaml` contains both `bootstrap-admin-user` and `bootstrap-admin-password` Secret keys. **No resource was applied to the cluster.**
+- `./scripts/verify-kubernetes-manifests.sh` → **PASS** (exit 0) run with `KUBECONFIG` pointing at the dev cluster. All client-side dry-runs (`kubectl apply --dry-run=client --validate=false` for namespace/readonly RBAC/PVC/deployment/service, and separately for executor RBAC; `kubectl auth reconcile --dry-run=client` for both RBAC files) succeeded. Static assertions passed: no `AURORA_AIOPS_KUBECONFIG`/`aurora-aiops-kubeconfig`/`name: kubeconfig` in `deployment.yaml`; `rbac.yaml` contains `kind: ClusterRole` and `kind: ClusterRoleBinding`; `deployment.yaml` contains both `bootstrap-admin-user` and `bootstrap-admin-password` Secret keys. **No resource was applied to the cluster.**
 - `kubectl auth can-i` eight-item simulation → **NOT RUN — external cluster mutation not authorized.** The simulation requires binding the RBAC manifests into a cluster; the only reachable cluster is the developer's connected cluster (`192.168.120.128`, not disposable), and no disposable validation cluster/context was explicitly selected. Not marked passed.
 
 ## Feature-level evidence

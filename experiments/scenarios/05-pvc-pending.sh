@@ -12,10 +12,10 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: data-pending
-  namespace: kubejojo-lab
+  namespace: aurora-aiops-lab
   labels:
-    app.kubernetes.io/part-of: kubejojo-experiment
-    kubejojo.io/scenario: pvc-pending
+    app.kubernetes.io/part-of: aurora-aiops-experiment
+    aurora-aiops.io/scenario: pvc-pending
 spec:
   accessModes: [ReadWriteOnce]
   storageClassName: non-existent-sc

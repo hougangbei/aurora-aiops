@@ -12,10 +12,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: dns-app
-  namespace: kubejojo-lab
+  namespace: aurora-aiops-lab
   labels:
-    app.kubernetes.io/part-of: kubejojo-experiment
-    kubejojo.io/scenario: dns-failure
+    app.kubernetes.io/part-of: aurora-aiops-experiment
+    aurora-aiops.io/scenario: dns-failure
 spec:
   replicas: 1
   selector:
@@ -24,8 +24,8 @@ spec:
     metadata:
       labels:
         app: dns-app
-        app.kubernetes.io/part-of: kubejojo-experiment
-        kubejojo.io/scenario: dns-failure
+        app.kubernetes.io/part-of: aurora-aiops-experiment
+        aurora-aiops.io/scenario: dns-failure
     spec:
       containers:
       - name: app
@@ -37,10 +37,10 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: dns-deny-egress
-  namespace: kubejojo-lab
+  namespace: aurora-aiops-lab
   labels:
-    app.kubernetes.io/part-of: kubejojo-experiment
-    kubejojo.io/scenario: dns-failure
+    app.kubernetes.io/part-of: aurora-aiops-experiment
+    aurora-aiops.io/scenario: dns-failure
 spec:
   podSelector:
     matchLabels: {app: dns-app}

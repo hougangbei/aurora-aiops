@@ -28,7 +28,7 @@
 
    ```bash
    cd server && go test ./internal/server -run 'Secret|PlatformRBAC'
-   KUBECONFIG=/Volumes/gang/work/k8s2/kubejojo/.dev-kubeconfig/kubeconfig ./scripts/verify-kubernetes-manifests.sh
+   KUBECONFIG=/Volumes/gang/work/k8s2/aurora-aiops/.dev-kubeconfig/kubeconfig ./scripts/verify-kubernetes-manifests.sh
    ```
 
 ## 任务 2：集群内身份为 kubectl 生成安全运行时 kubeconfig
@@ -45,14 +45,14 @@
 1. 修改身份优先级测试，要求 in-cluster 客户端返回非空 `ConfigPath`。
 2. 增加真实写盘单测，断言生成文件权限为 `0600`、引用 ServiceAccount `tokenFile`、不嵌入 Bearer Token，并保留服务端地址和 CA 配置。
 3. 为测试注入运行时 kubeconfig 写入器；生产实现使用 client-go 配置 API 生成仅供 kubectl 使用的短生命周期 kubeconfig。
-4. 写入位置由 `KUBEJOJO_RUNTIME_DIR` 控制，默认退回 `os.TempDir()`；使用临时文件和 `0600` 权限。
-5. Deployment 增加内存型 `emptyDir` 并挂载 `/var/run/kubejojo`，设置 `KUBEJOJO_RUNTIME_DIR=/var/run/kubejojo`，保持根文件系统只读。
+4. 写入位置由 `AURORA_AIOPS_RUNTIME_DIR` 控制，默认退回 `os.TempDir()`；使用临时文件和 `0600` 权限。
+5. Deployment 增加内存型 `emptyDir` 并挂载 `/var/run/aurora-aiops`，设置 `AURORA_AIOPS_RUNTIME_DIR=/var/run/aurora-aiops`，保持根文件系统只读。
 6. 扩展清单验证，要求运行时目录、内存卷和挂载存在，同时继续禁止外部 kubeconfig Secret/ConfigMap 挂载。
 7. 运行：
 
    ```bash
    cd server && go test ./internal/kube
-   KUBECONFIG=/Volumes/gang/work/k8s2/kubejojo/.dev-kubeconfig/kubeconfig ./scripts/verify-kubernetes-manifests.sh
+   KUBECONFIG=/Volumes/gang/work/k8s2/aurora-aiops/.dev-kubeconfig/kubeconfig ./scripts/verify-kubernetes-manifests.sh
    ```
 
 ## 任务 3：审批状态与审计记录原子提交
@@ -133,7 +133,7 @@
    cd web && npm ci
    cd web && npm test -- --run
    cd web && npm run build
-   KUBECONFIG=/Volumes/gang/work/k8s2/kubejojo/.dev-kubeconfig/kubeconfig ./scripts/verify-kubernetes-manifests.sh
+   KUBECONFIG=/Volumes/gang/work/k8s2/aurora-aiops/.dev-kubeconfig/kubeconfig ./scripts/verify-kubernetes-manifests.sh
    ./scripts/build-release.sh
    git status --short
    ```

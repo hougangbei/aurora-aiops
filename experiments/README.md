@@ -1,6 +1,6 @@
 # 可重复故障实验
 
-在 kubejojo 测试集群上注入可重复故障、验证故障真实出现、再清理的脚本集。所有对象都带 `app.kubernetes.io/part-of=kubejojo-experiment` 与 `kubejojo.io/scenario=<id>` 标签，且只存在于 `kubejojo-lab` 命名空间。
+在 aurora-aiops 测试集群上注入可重复故障、验证故障真实出现、再清理的脚本集。所有对象都带 `app.kubernetes.io/part-of=aurora-aiops-experiment` 与 `aurora-aiops.io/scenario=<id>` 标签，且只存在于 `aurora-aiops-lab` 命名空间。
 
 ## 场景
 
@@ -30,5 +30,5 @@ RUNS=10 ./scripts/run-suite.sh
 
 ## 安全边界
 
-- cleanup 只按 `kubejojo.io/scenario=<id>` + `app.kubernetes.io/part-of=kubejojo-experiment` 标签删除，且限于 `kubejojo-lab` 命名空间，绝不动命名空间外资源。
+- cleanup 只按 `aurora-aiops.io/scenario=<id>` + `app.kubernetes.io/part-of=aurora-aiops-experiment` 标签删除，且限于 `aurora-aiops-lab` 命名空间，绝不动命名空间外资源。
 - verify 在故障真实出现前返回非零；cleanup 后资源应消失。

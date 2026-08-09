@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** 将 Web 侧栏左上角品牌从 `kubejojo` 更新为 `AIOps 平台`，并落地已批准的 Aurora 节点图标。
+**Goal:** 将 Web 侧栏左上角品牌从 `aurora-aiops` 更新为 `AIOps 平台`，并落地已批准的 Aurora 节点图标。
 
 **Architecture:** 保留现有 `BrandLogo` 组件接口和 `AppLayout` 的布局结构，仅把图片 logo 替换为可缩放的 CSS/HTML 品牌标记，并更新品牌文案。通过组件级可访问性测试锁定图标语义，最后用现有构建和浏览器预览确认布局没有回归。
 
@@ -81,7 +81,7 @@ Remove the unused `logo.jpg` import. Keep the component free of external assets 
 In `NavigationPanel`, replace:
 
 ```tsx
-<span className="text-lg font-bold text-gray-900">kubejojo</span>
+<span className="text-lg font-bold text-gray-900">aurora-aiops</span>
 ```
 
 with:

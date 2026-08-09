@@ -1,58 +1,58 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: kubejojo
-  namespace: kubejojo
+  name: aurora-aiops
+  namespace: aurora-aiops
   labels:
-    app.kubernetes.io/name: kubejojo
+    app.kubernetes.io/name: aurora-aiops
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: kubejojo
+      app.kubernetes.io/name: aurora-aiops
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: kubejojo
+        app.kubernetes.io/name: aurora-aiops
     spec:
-      serviceAccountName: kubejojo-readonly
+      serviceAccountName: aurora-aiops-readonly
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
         fsGroup: 10001
       containers:
-      - name: kubejojo
-        image: kubejojo:local
+      - name: aurora-aiops
+        image: aurora-aiops:local
         imagePullPolicy: IfNotPresent
         args: []
         env:
         - name: HTTP_ADDR
           value: ":8080"
-        - name: KUBEJOJO_AIOPS_DB
-          value: /var/lib/kubejojo/kubejojo.db
-        - name: KUBEJOJO_RUNTIME_DIR
-          value: /var/run/kubejojo
+        - name: AURORA_AIOPS_AIOPS_DB
+          value: /var/lib/aurora-aiops/aurora-aiops.db
+        - name: AURORA_AIOPS_RUNTIME_DIR
+          value: /var/run/aurora-aiops
         # 平台身份通过 ServiceAccount（in-cluster）访问集群，不挂载 kubeconfig。
-        - name: KUBEJOJO_BOOTSTRAP_ADMIN_USER
+        - name: AURORA_AIOPS_BOOTSTRAP_ADMIN_USER
           valueFrom:
             secretKeyRef:
-              name: kubejojo-secrets
+              name: aurora-aiops-secrets
               key: bootstrap-admin-user
-        - name: KUBEJOJO_BOOTSTRAP_ADMIN_PASSWORD
+        - name: AURORA_AIOPS_BOOTSTRAP_ADMIN_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: kubejojo-secrets
+              name: aurora-aiops-secrets
               key: bootstrap-admin-password
         # LLM API Key 只通过 Secret 引用，样例文件不放真实值。
-        - name: KUBEJOJO_LLM_BASE_URL
+        - name: AURORA_AIOPS_LLM_BASE_URL
           value: ""
-        - name: KUBEJOJO_LLM_API_KEY
+        - name: AURORA_AIOPS_LLM_API_KEY
           valueFrom:
             secretKeyRef:
-              name: kubejojo-secrets
+              name: aurora-aiops-secrets
               key: llm-api-key
               optional: true
-        - name: KUBEJOJO_LLM_MODEL
+        - name: AURORA_AIOPS_LLM_MODEL
           value: ""
         ports:
         - containerPort: 8080
@@ -63,9 +63,9 @@ spec:
             drop: ["ALL"]
         volumeMounts:
         - name: data
-          mountPath: /var/lib/kubejojo
+          mountPath: /var/lib/aurora-aiops
         - name: runtime
-          mountPath: /var/run/kubejojo
+          mountPath: /var/run/aurora-aiops
         resources:
           requests:
             cpu: 50m
@@ -76,7 +76,7 @@ spec:
       volumes:
       - name: data
         persistentVolumeClaim:
-          claimName: kubejojo-data
+          claimName: aurora-aiops-data
       - name: runtime
         emptyDir:
           medium: Memory

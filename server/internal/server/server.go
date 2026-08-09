@@ -4,24 +4,23 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
-	"github.com/heihuzicity-tech/kubejojo/server/internal/aiops"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/audit"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/auth"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/buildinfo"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/cluster"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/config"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/evidence"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/experiment"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/kube"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/llm"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/remediation"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/service"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/store"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/web"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/aiops"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/audit"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/auth"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/buildinfo"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/cluster"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/config"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/evidence"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/experiment"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/kube"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/llm"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/remediation"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/service"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/store"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/web"
 )
 
 func Run(info buildinfo.Info) error {
@@ -168,8 +167,7 @@ func setupAIOps(dbPath string) (*sql.DB, *aiops.Service, error) {
 // when the users table is empty. Missing credentials on an empty database fail
 // startup; once a user exists the environment variables are ignored.
 func bootstrapAdmin(cfg config.Config, authService *auth.Service) error {
-	username := os.Getenv("KUBEJOJO_BOOTSTRAP_ADMIN_USER")
-	password := os.Getenv("KUBEJOJO_BOOTSTRAP_ADMIN_PASSWORD")
+	username, password := config.BootstrapAdminCredentials()
 	if err := authService.BootstrapAdmin(context.Background(), username, password); err != nil {
 		return fmt.Errorf("bootstrap admin: %w", err)
 	}

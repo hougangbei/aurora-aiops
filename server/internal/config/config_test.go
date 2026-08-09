@@ -57,6 +57,26 @@ func TestLoadFallsBackToLegacyWithoutLoggingSecretValues(t *testing.T) {
 	}
 }
 
+func TestBootstrapAdminCredentialsPreferAuroraVariables(t *testing.T) {
+	t.Setenv("AURORA_AIOPS_BOOTSTRAP_ADMIN_USER", "aurora-admin")
+	t.Setenv("AURORA_AIOPS_BOOTSTRAP_ADMIN_PASSWORD", "aurora-password")
+	t.Setenv("KUBEJOJO_BOOTSTRAP_ADMIN_USER", "legacy-admin")
+	t.Setenv("KUBEJOJO_BOOTSTRAP_ADMIN_PASSWORD", "legacy-password")
+
+	username, password := BootstrapAdminCredentials()
+	if username != "aurora-admin" || password != "aurora-password" {
+		t.Fatalf("credentials=(%q,%q), want Aurora variables", username, password)
+	}
+}
+
+func TestRuntimeDirFallsBackToLegacyVariable(t *testing.T) {
+	t.Setenv("AURORA_AIOPS_RUNTIME_DIR", "")
+	t.Setenv("KUBEJOJO_RUNTIME_DIR", "/var/run/legacy")
+	if got := RuntimeDir(); got != "/var/run/legacy" {
+		t.Fatalf("RuntimeDir=%q want legacy fallback", got)
+	}
+}
+
 func TestLoadUsesLegacyDefaultDatabaseWhenPresent(t *testing.T) {
 	t.Chdir(t.TempDir())
 	if err := os.MkdirAll("data", 0o755); err != nil {

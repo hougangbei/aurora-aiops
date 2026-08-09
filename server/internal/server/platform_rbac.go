@@ -5,8 +5,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heihuzicity-tech/kubejojo/server/internal/auth"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/response"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/auth"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/response"
 )
 
 // operatorWritePaths is the explicit allowlist of mutations that an operator

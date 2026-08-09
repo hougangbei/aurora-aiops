@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heihuzicity-tech/kubejojo/server/internal/store"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/store"
 )
 
 func newTestRepository(t *testing.T) IncidentRepository {

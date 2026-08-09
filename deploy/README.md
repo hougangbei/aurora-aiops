@@ -4,7 +4,7 @@
 
 ## Release 托管
 
-- `kubejojo.service`
+- `aurora-aiops.service`
   - `systemd` 单元模板
   - 面向 release 模式部署
   - 为后续在线更新预留了 `Restart=always` 和可写工作目录前提

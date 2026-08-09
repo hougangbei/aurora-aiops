@@ -282,7 +282,7 @@ export function AppLayout({ children }: PropsWithChildren) {
               ) : null}
               <div className="min-w-0">
                 <div className="aurora-eyebrow text-xs font-semibold uppercase tracking-[0.18em]">
-                  {activeItem?.sectionLabel ?? 'kubejojo'}
+                  {activeItem?.sectionLabel ?? 'Aurora AIOps'}
                 </div>
                 <div className="mt-1 flex min-w-0 items-center gap-2">
                   <Typography.Title level={4} className="!mb-0 truncate">

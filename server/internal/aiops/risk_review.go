@@ -1,7 +1,7 @@
 package aiops
 
 import (
-	"github.com/heihuzicity-tech/kubejojo/server/internal/policy"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/policy"
 )
 
 // BuildEffectiveRiskReview is the only source of approvability. ModelReview is

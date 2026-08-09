@@ -365,7 +365,7 @@ export function SystemUpdatesPage() {
   const releaseName =
     updateStatus?.releaseInfo?.name ||
     (updateStatus?.primaryState === 'update_available'
-      ? `kubejojo v${latestVersion}`
+      ? `Aurora AIOps v${latestVersion}`
       : '当前没有新的发布说明');
   const releasePublishedAt = formatTimestamp(updateStatus?.releaseInfo?.publishedAt);
   const releaseBody = normalizeReleaseBody(updateStatus?.releaseInfo?.body);

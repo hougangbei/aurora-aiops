@@ -27,7 +27,7 @@ func (l *SystemOperationLock) OperationID() string {
 
 // SystemOperationLockService provides the same orchestration boundary as sub2api:
 // handlers own the lock lifecycle, while UpdateService only performs the action.
-// kubejojo currently runs as a single process, so a process-local lock is sufficient.
+// aurora-aiops currently runs as a single process, so a process-local lock is sufficient.
 type SystemOperationLockService struct {
 	mu      sync.Mutex
 	current *SystemOperationLock

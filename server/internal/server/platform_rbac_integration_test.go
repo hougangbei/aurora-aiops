@@ -17,17 +17,17 @@ import (
 	"k8s.io/client-go/rest"
 	metricsfake "k8s.io/metrics/pkg/client/clientset/versioned/fake"
 
-	"github.com/heihuzicity-tech/kubejojo/server/internal/aiops"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/audit"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/auth"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/buildinfo"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/config"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/evidence"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/experiment"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/kube"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/remediation"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/service"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/store"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/aiops"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/audit"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/auth"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/buildinfo"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/config"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/evidence"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/experiment"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/kube"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/remediation"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/service"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/store"
 )
 
 // newPlatformRBACRouter builds the full production router with platform auth,
@@ -53,9 +53,9 @@ func newPlatformRBACRouter(t *testing.T) (*gin.Engine, *auth.Service, string) {
 	// a live cluster. Unauthorized requests must never create the marker file.
 	kubectlDir := t.TempDir()
 	secretReadMarker := filepath.Join(t.TempDir(), "secret-read")
-	t.Setenv("KUBEJOJO_TEST_SECRET_READ_MARKER", secretReadMarker)
+	t.Setenv("AURORA_AIOPS_TEST_SECRET_READ_MARKER", secretReadMarker)
 	t.Setenv("PATH", kubectlDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	fakeKubectl := []byte("#!/bin/sh\n: > \"$KUBEJOJO_TEST_SECRET_READ_MARKER\"\nprintf 'apiVersion: v1\\nkind: Secret\\nmetadata:\\n  name: app\\n  namespace: default\\ndata:\\n  token: cmVkYWN0ZWQ=\\n'\n")
+	fakeKubectl := []byte("#!/bin/sh\n: > \"$AURORA_AIOPS_TEST_SECRET_READ_MARKER\"\nprintf 'apiVersion: v1\\nkind: Secret\\nmetadata:\\n  name: app\\n  namespace: default\\ndata:\\n  token: cmVkYWN0ZWQ=\\n'\n")
 	if err := os.WriteFile(filepath.Join(kubectlDir, "kubectl"), fakeKubectl, 0o700); err != nil {
 		t.Fatalf("write fake kubectl: %v", err)
 	}

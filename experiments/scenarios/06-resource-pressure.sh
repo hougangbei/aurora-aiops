@@ -12,10 +12,10 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: pressure-demo
-  namespace: kubejojo-lab
+  namespace: aurora-aiops-lab
   labels:
-    app.kubernetes.io/part-of: kubejojo-experiment
-    kubejojo.io/scenario: resource-pressure
+    app.kubernetes.io/part-of: aurora-aiops-experiment
+    aurora-aiops.io/scenario: resource-pressure
 spec:
   containers:
   - name: app

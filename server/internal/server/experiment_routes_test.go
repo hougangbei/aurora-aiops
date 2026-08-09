@@ -15,11 +15,11 @@ import (
 	"k8s.io/client-go/rest"
 	metricsfake "k8s.io/metrics/pkg/client/clientset/versioned/fake"
 
-	"github.com/heihuzicity-tech/kubejojo/server/internal/auth"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/experiment"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/kube"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/service"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/store"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/auth"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/experiment"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/kube"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/service"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/store"
 )
 
 func newExperimentTestRouter(t *testing.T) (*gin.Engine, *auth.Service) {

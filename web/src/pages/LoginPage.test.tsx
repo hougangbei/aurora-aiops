@@ -85,7 +85,7 @@ describe('LoginPage', () => {
     expect(container.querySelector('input[name="token"]')).toBeNull();
     expect(container.querySelector('[name="ServiceAccount Token"]')).toBeNull();
 
-    const persisted = JSON.parse(localStorage.getItem('kubejojo-app') ?? '{}');
+    const persisted = JSON.parse(localStorage.getItem('aurora-aiops-app') ?? '{}');
     expect(persisted.state?.token).toBeUndefined();
   });
 

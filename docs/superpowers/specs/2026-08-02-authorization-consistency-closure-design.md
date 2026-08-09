@@ -93,12 +93,12 @@ Service 流程固定为：读取 Incident、使用状态机验证 `from -> to`�
 
 默认清单与可执行清单分离：
 
-- `deploy/kubernetes/rbac.yaml`：只包含 `kubejojo-readonly` ServiceAccount、只读 `ClusterRole` 和 `ClusterRoleBinding`，支持 Nodes、Namespaces 及跨命名空间读取。
-- `deploy/kubernetes/rbac-executor.yaml`：显式启用的 `kubejojo-executor` ServiceAccount；同时绑定只读 ClusterRole，并额外绑定仅允许 Deployment restart/scale 和 CronJob suspend 所需 verbs 的执行 ClusterRole。
+- `deploy/kubernetes/rbac.yaml`：只包含 `aurora-aiops-readonly` ServiceAccount、只读 `ClusterRole` 和 `ClusterRoleBinding`，支持 Nodes、Namespaces 及跨命名空间读取。
+- `deploy/kubernetes/rbac-executor.yaml`：显式启用的 `aurora-aiops-executor` ServiceAccount；同时绑定只读 ClusterRole，并额外绑定仅允许 Deployment restart/scale 和 CronJob suspend 所需 verbs 的执行 ClusterRole。
 - `deploy/kubernetes/deployment.yaml` 默认继续使用 readonly ServiceAccount。
-- Kubernetes 客户端配置顺序调整为：显式 `KUBEJOJO_KUBECONFIG`、显式 `KUBECONFIG`、集群内 `rest.InClusterConfig()`、本地 `~/.kube/config`。Deployment 不再强制挂载 kubeconfig Secret，确保实际身份就是所选 ServiceAccount；进程内仍只创建一个共享客户端。
+- Kubernetes 客户端配置顺序调整为：显式 `AURORA_AIOPS_KUBECONFIG`、显式 `KUBECONFIG`、集群内 `rest.InClusterConfig()`、本地 `~/.kube/config`。Deployment 不再强制挂载 kubeconfig Secret，确保实际身份就是所选 ServiceAccount；进程内仍只创建一个共享客户端。
 - 新增 Namespace 与 PVC 清单。部署文档提供创建 bootstrap 管理员和可选 LLM Key Secret 的准确命令，示例不包含真实凭证；集群外部署才说明如何显式挂载 kubeconfig。
-- Deployment 从 Secret 引用 `KUBEJOJO_BOOTSTRAP_ADMIN_USER` 和 `KUBEJOJO_BOOTSTRAP_ADMIN_PASSWORD`，保证空数据库首次启动有明确配置入口。
+- Deployment 从 Secret 引用 `AURORA_AIOPS_BOOTSTRAP_ADMIN_USER` 和 `AURORA_AIOPS_BOOTSTRAP_ADMIN_PASSWORD`，保证空数据库首次启动有明确配置入口。
 
 执行权限仍受应用 policy 与人工审批约束；Kubernetes RBAC 是最后一道权限上限，不替代应用层角色检查。
 

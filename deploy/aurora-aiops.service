@@ -1,0 +1,41 @@
+[Unit]
+Description=Aurora AIOps - Kubernetes Single Cluster Console
+Documentation=https://github.com/heihuzicity-tech/aurora-aiops
+After=network.target
+
+[Service]
+Type=simple
+User=aurora-aiops
+Group=aurora-aiops
+WorkingDirectory=/opt/aurora-aiops
+ExecStart=/opt/aurora-aiops/aurora-aiops
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=aurora-aiops
+
+# Future online update flow relies on the binary being writable in place.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/aurora-aiops
+
+# Adjust these values for your target environment.
+Environment=HTTP_ADDR=:8080
+Environment=AURORA_AIOPS_KUBECONFIG=/opt/aurora-aiops/config/kubeconfig
+Environment=AURORA_AIOPS_AIOPS_DB=/opt/aurora-aiops/data/aurora-aiops.db
+# LLM 模型端点：未配置时只运行确定性 triage/collector。
+# Environment=AURORA_AIOPS_LLM_BASE_URL=https://api.example.com/v1
+# Environment=AURORA_AIOPS_LLM_API_KEY=change-me
+# Environment=AURORA_AIOPS_LLM_MODEL=model-name
+# Environment=AURORA_AIOPS_LLM_API_STYLE=chat_completions
+# Environment=AURORA_AIOPS_UPDATE_ENABLED=true
+# Environment=AURORA_AIOPS_UPDATE_ALLOW_PRERELEASES=true
+# Environment=AURORA_AIOPS_UPDATE_REPOSITORY=heihuzicity-tech/aurora-aiops
+# Environment=AURORA_AIOPS_UPDATE_ALLOWED_SUBJECTS=system:serviceaccount:kube-system:aurora-aiops-dev
+Environment=AURORA_AIOPS_UPDATE_TARGET_PATH=/opt/aurora-aiops/aurora-aiops
+
+[Install]
+WantedBy=multi-user.target

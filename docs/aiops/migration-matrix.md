@@ -1,4 +1,4 @@
-# qd → kubejojo API 迁移矩阵
+# qd → Aurora AIOps API 迁移矩阵
 
 > 基线日期：2026-08-01。状态取值固定为 `reference`（后续计划迁移，当前仅参考）、`implemented-in-go`（已在 Go 中实现）、`intentionally-dropped`（不迁移）。
 
@@ -7,7 +7,7 @@
 ## 说明
 
 - **Go 目标命名空间统一为 `/api/v1`**；qd 的 `/api/...` 只作为行为参照，路径不等同于最终 Go 路径。
-- kubejojo 自身已具备的资源域（节点、Pod、工作负载、网络、存储、RBAC 等）**不迁移 qd 的同名接口**，保留 kubejojo 既有实现；qd 中与 kubejojo 功能重叠的接口标 `intentionally-dropped`。
+- aurora-aiops 自身已具备的资源域（节点、Pod、工作负载、网络、存储、RBAC 等）**不迁移 qd 的同名接口**，保留 aurora-aiops 既有实现；qd 中与 aurora-aiops 功能重叠的接口标 `intentionally-dropped`。
 - 计划 01 已完成：Incident 持久化、状态机与三条 incidents 接口。
 - 计划 01A 已完成：账号登录（Session）、集群连接与共享 kubeconfig。
 - 计划 02 已完成：证据链（Evidence DAG / Context Bundle / K8s 采集）、五角色多智能体诊断工作流、模型调用（OpenAI-compatible）、Evidence / Runs / Reanalyze / SSE API；工具调用记录留待后续。
@@ -26,34 +26,34 @@
 
 | qd 接口 | 迁移状态 | 备注 |
 | --- | --- | --- |
-| `GET /api/health` | `intentionally-dropped` | kubejojo 已有等价健康探针 |
-| `GET /api/cluster/summary` | `intentionally-dropped` | kubejojo 集群总览已覆盖 |
+| `GET /api/health` | `intentionally-dropped` | aurora-aiops 已有等价健康探针 |
+| `GET /api/cluster/summary` | `intentionally-dropped` | aurora-aiops 集群总览已覆盖 |
 | `GET /api/cluster/connection` | `implemented-in-go` | `GET /api/v1/cluster/connection`，共享 kubeconfig 探测（30s 缓存） |
 | `PUT /api/cluster/connection` | `intentionally-dropped` | 连接参数改为进程启动时由环境变量固定，不再由前端改写 |
 | `POST /api/cluster/connection/test` | `implemented-in-go` | `POST /api/v1/cluster/connection/test`，需 operator/admin |
 | `POST /api/cluster/connection/refresh-kubeconfig` | `intentionally-dropped` | 共享 kubeconfig 由部署方管理，运行期不重刷 |
-| `GET /api/cluster/capabilities` | `intentionally-dropped` | 迁移期能力探测，kubejojo 直接面向集群 |
+| `GET /api/cluster/capabilities` | `intentionally-dropped` | 迁移期能力探测，aurora-aiops 直接面向集群 |
 | `GET /api/cluster/validation-resources` | `intentionally-dropped` | 交付物已归档，非运行时接口 |
 | `GET /api/cluster/validation-resources/details` | `intentionally-dropped` | 同上 |
 | `GET /api/nodes` | `implemented-in-go` | `GET /api/v1/nodes`，既有富 `NodeItem` 已携带 `internalAddress`/`hostname`（地址来自共享 `SelectNodeAddress`） |
-| `GET /api/nodes/:name` | `intentionally-dropped` | kubejojo 节点详情已覆盖 |
-| `GET /api/nodes/:name/metrics` | `intentionally-dropped` | kubejojo 指标能力已覆盖 |
+| `GET /api/nodes/:name` | `intentionally-dropped` | aurora-aiops 节点详情已覆盖 |
+| `GET /api/nodes/:name/metrics` | `intentionally-dropped` | aurora-aiops 指标能力已覆盖 |
 | `GET /api/nodes/:name/snapshots` | `reference` | 计划 04 故障实验快照 |
 | `POST /api/nodes/:name/snapshots` | `reference` | 计划 04 |
 | `POST /api/nodes/:name/snapshots/:snapshotId/rollback` | `reference` | 计划 04 |
-| `GET /api/namespaces` | `intentionally-dropped` | kubejojo 已覆盖 |
+| `GET /api/namespaces` | `intentionally-dropped` | aurora-aiops 已覆盖 |
 | `GET /api/namespaces/:id` | `intentionally-dropped` | 同上 |
-| `GET /api/workloads` | `intentionally-dropped` | kubejojo 工作负载已覆盖 |
+| `GET /api/workloads` | `intentionally-dropped` | aurora-aiops 工作负载已覆盖 |
 | `GET /api/workloads/:namespace/:kind/:name` | `intentionally-dropped` | 同上 |
-| `GET /api/pods/:namespace/:name` | `intentionally-dropped` | kubejojo Pod 详情已覆盖 |
+| `GET /api/pods/:namespace/:name` | `intentionally-dropped` | aurora-aiops Pod 详情已覆盖 |
 | `GET /api/pods/:namespace/:name/logs` | `intentionally-dropped` | 同上 |
 | `GET /api/pods/:namespace/:name/events` | `intentionally-dropped` | 同上 |
 | `GET /api/pods/:namespace/:name/network` | `intentionally-dropped` | 同上 |
-| `GET /api/metrics/pods` | `intentionally-dropped` | kubejojo 已覆盖 |
-| `GET /api/network/overview` | `intentionally-dropped` | kubejojo 网络域已覆盖 |
+| `GET /api/metrics/pods` | `intentionally-dropped` | aurora-aiops 已覆盖 |
+| `GET /api/network/overview` | `intentionally-dropped` | aurora-aiops 网络域已覆盖 |
 | `GET /api/network/flows` | `intentionally-dropped` | 同上 |
 | `POST /api/network/health/recheck` | `intentionally-dropped` | 同上 |
-| `GET /api/storage/overview` | `intentionally-dropped` | kubejojo 存储域已覆盖 |
+| `GET /api/storage/overview` | `intentionally-dropped` | aurora-aiops 存储域已覆盖 |
 | `GET /api/storage/classes` | `intentionally-dropped` | 同上 |
 | `GET /api/storage/persistent-volumes` | `intentionally-dropped` | 同上 |
 | `GET /api/storage/persistent-volume-claims` | `intentionally-dropped` | 同上 |
@@ -99,7 +99,7 @@
 | `POST /api/v1/aiops/incidents/:id/reanalyze` | `POST /api/aiops/incidents/:id/reanalyze` | 终态重诊断，需 operator/admin |
 | `GET /api/v1/aiops/incidents/:id/events` | （无 qd 对应） | SSE 事件流，`lastEventId` 断线重放，15s 心跳 |
 
-模型调用约定：`KUBEJOJO_LLM_BASE_URL/API_KEY/MODEL/API_STYLE/TIMEOUT`。五角色输出全部经结构化校验（置信度/证据引用/Shell 命令等），非法输出只把 Incident 置 `failed`，不执行动作。未配置模型时确定性 triage/collector 照常运行，根因及后续角色记为 `model_unavailable`。
+模型调用约定：`AURORA_AIOPS_LLM_BASE_URL/API_KEY/MODEL/API_STYLE/TIMEOUT`。五角色输出全部经结构化校验（置信度/证据引用/Shell 命令等），非法输出只把 Incident 置 `failed`，不执行动作。未配置模型时确定性 triage/collector 照常运行，根因及后续角色记为 `model_unavailable`。
 
 文档与错误码见 `docs/aiops/api-v1.md`。
 

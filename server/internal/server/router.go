@@ -18,17 +18,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heihuzicity-tech/kubejojo/server/internal/aiops"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/auth"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/buildinfo"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/cluster"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/experiment"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/kube"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/ptyx"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/remediation"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/response"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/service"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/web"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/aiops"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/auth"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/buildinfo"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/cluster"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/experiment"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/kube"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/ptyx"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/remediation"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/response"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/service"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/web"
 )
 
 const clusterServiceContextKey = "clusterService"
@@ -90,7 +90,7 @@ func newRouter(
 
 	router.GET("/healthz", func(c *gin.Context) {
 		c.JSON(http.StatusOK, response.Success(gin.H{
-			"service": "kubejojo",
+			"service": "aurora-aiops",
 			"status":  "ok",
 		}))
 	})

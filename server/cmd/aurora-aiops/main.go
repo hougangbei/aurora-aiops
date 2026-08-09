@@ -7,8 +7,8 @@ import (
 	"log"
 	"strings"
 
-	"github.com/heihuzicity-tech/kubejojo/server/internal/buildinfo"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/server"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/buildinfo"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/server"
 )
 
 //go:embed VERSION
@@ -39,7 +39,7 @@ func main() {
 	info := buildinfo.New(Version, Commit, Date, BuildType)
 	if *showVersion {
 		fmt.Printf(
-			"kubejojo %s (commit: %s, built: %s, type: %s)\n",
+			"aurora-aiops %s (commit: %s, built: %s, type: %s)\n",
 			info.Version,
 			info.Commit,
 			info.Date,

@@ -12,10 +12,12 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
+
+	appconfig "github.com/heihuzicity-tech/aurora-aiops/server/internal/config"
 )
 
 const (
-	runtimeDirEnv           = "KUBEJOJO_RUNTIME_DIR"
+	runtimeDirEnv           = "AURORA_AIOPS_RUNTIME_DIR"
 	serviceAccountTokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token"
 	serviceAccountCAPath    = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 )
@@ -108,7 +110,7 @@ func writeInClusterKubeconfig(config *rest.Config) (string, error) {
 		return "", fmt.Errorf("service account token file is required")
 	}
 
-	runtimeDir := strings.TrimSpace(os.Getenv(runtimeDirEnv))
+	runtimeDir := strings.TrimSpace(appconfig.RuntimeDir())
 	if runtimeDir == "" {
 		runtimeDir = os.TempDir()
 	}
@@ -150,7 +152,7 @@ func writeRuntimeKubeconfigFile(
 	createTemp func(dir, pattern string) (runtimeKubeconfigFile, error),
 	runtimeDir string,
 ) (string, error) {
-	file, err := createTemp(runtimeDir, "kubejojo-kubeconfig-*")
+	file, err := createTemp(runtimeDir, "aurora-aiops-kubeconfig-*")
 	if err != nil {
 		return "", fmt.Errorf("create runtime kubeconfig: %w", redactConfigPath(err, runtimeDir))
 	}

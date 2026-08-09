@@ -1,13 +1,13 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: kubejojo
-  namespace: kubejojo
+  name: aurora-aiops
+  namespace: aurora-aiops
   labels:
-    app.kubernetes.io/name: kubejojo
+    app.kubernetes.io/name: aurora-aiops
 spec:
   selector:
-    app.kubernetes.io/name: kubejojo
+    app.kubernetes.io/name: aurora-aiops
   ports:
   - port: 8080
     targetPort: 8080

@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heihuzicity-tech/kubejojo/server/internal/evidence"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/llm"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/store"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/evidence"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/llm"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/store"
 )
 
 func newWorkflowTest(t *testing.T) (*sql.DB, *Service, IncidentRepository, RunRepository, evidence.Repository) {

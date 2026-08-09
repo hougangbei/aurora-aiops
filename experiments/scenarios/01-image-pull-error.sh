@@ -12,10 +12,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: image-pull-demo
-  namespace: kubejojo-lab
+  namespace: aurora-aiops-lab
   labels:
-    app.kubernetes.io/part-of: kubejojo-experiment
-    kubejojo.io/scenario: image-pull
+    app.kubernetes.io/part-of: aurora-aiops-experiment
+    aurora-aiops.io/scenario: image-pull
 spec:
   replicas: 1
   selector:
@@ -24,8 +24,8 @@ spec:
     metadata:
       labels:
         app: image-pull-demo
-        app.kubernetes.io/part-of: kubejojo-experiment
-        kubejojo.io/scenario: image-pull
+        app.kubernetes.io/part-of: aurora-aiops-experiment
+        aurora-aiops.io/scenario: image-pull
     spec:
       containers:
       - name: app
@@ -35,7 +35,7 @@ YAML
     ;;
   verify)
     for _ in $(seq 1 60); do
-      reason=$(kubectl -n "$NAMESPACE" get pod -l kubejojo.io/scenario=image-pull -o jsonpath='{.items[0].status.containerStatuses[0].state.waiting.reason}' 2>/dev/null || true)
+      reason=$(kubectl -n "$NAMESPACE" get pod -l aurora-aiops.io/scenario=image-pull -o jsonpath='{.items[0].status.containerStatuses[0].state.waiting.reason}' 2>/dev/null || true)
       if [ "$reason" = "ImagePullBackOff" ] || [ "$reason" = "ErrImagePull" ]; then
         echo "OK: ImagePullBackOff present"
         exit 0

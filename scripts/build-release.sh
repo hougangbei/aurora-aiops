@@ -5,9 +5,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WEB_DIR="$ROOT_DIR/web"
 SERVER_DIR="$ROOT_DIR/server"
-SERVICE_FILE="$ROOT_DIR/deploy/kubejojo.service"
+SERVICE_FILE="$ROOT_DIR/deploy/aurora-aiops.service"
 
-VERSION_FILE="$SERVER_DIR/cmd/kubejojo/VERSION"
+VERSION_FILE="$SERVER_DIR/cmd/aurora-aiops/VERSION"
 VERSION="${VERSION:-$(tr -d '[:space:]' < "$VERSION_FILE")}"
 COMMIT="${COMMIT:-$(git -C "$ROOT_DIR" rev-parse --short=12 HEAD)}"
 DATE="${DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
@@ -16,7 +16,7 @@ GOARCH="${GOARCH:-$(go env GOARCH)}"
 
 ASSET_OUT_DIR="$SERVER_DIR/internal/web/dist/app"
 RELEASE_DIR="$SERVER_DIR/dist/release"
-PACKAGE_STEM="kubejojo_${VERSION}_${GOOS}_${GOARCH}"
+PACKAGE_STEM="aurora-aiops_${VERSION}_${GOOS}_${GOARCH}"
 PACKAGE_DIR="$RELEASE_DIR/$PACKAGE_STEM"
 ARCHIVE_PATH="$RELEASE_DIR/${PACKAGE_STEM}.tar.gz"
 CHECKSUM_PATH="$RELEASE_DIR/checksums.txt"
@@ -64,12 +64,17 @@ echo "==> Verifying backend vet + tests"
   go test ./...
 )
 
+echo "==> Verifying Aurora naming and migration"
+"$ROOT_DIR/scripts/verify-brand-rename.sh"
+"$ROOT_DIR/scripts/test-brand-migration.sh"
+"$ROOT_DIR/scripts/verify-systemd-service.sh"
+
 echo "==> Building frontend"
 rm -rf "$ASSET_OUT_DIR"
 mkdir -p "$ASSET_OUT_DIR"
 (
   cd "$WEB_DIR"
-  KUBEJOJO_WEB_OUT_DIR=../server/internal/web/dist/app npm run build
+  AURORA_AIOPS_WEB_OUT_DIR=../server/internal/web/dist/app npm run build
 )
 
 echo "==> Building backend"
@@ -80,11 +85,12 @@ mkdir -p "$PACKAGE_DIR"
   GOOS="$GOOS" GOARCH="$GOARCH" go build \
     -trimpath \
     -ldflags="-s -w -X 'main.Version=$VERSION' -X 'main.Commit=$COMMIT' -X 'main.Date=$DATE' -X 'main.BuildType=release'" \
-    -o "$PACKAGE_DIR/kubejojo" \
-    ./cmd/kubejojo
+    -o "$PACKAGE_DIR/aurora-aiops" \
+    ./cmd/aurora-aiops
 )
 
-cp "$SERVICE_FILE" "$PACKAGE_DIR/kubejojo.service"
+cp "$SERVICE_FILE" "$PACKAGE_DIR/aurora-aiops.service"
+cp "$ROOT_DIR/scripts/migrate-kubejojo-to-aurora-aiops.sh" "$PACKAGE_DIR/"
 
 echo "==> Packaging release archive"
 mkdir -p "$RELEASE_DIR"

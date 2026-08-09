@@ -8,8 +8,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heihuzicity-tech/kubejojo/server/internal/auth"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/response"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/auth"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/response"
 )
 
 type loginRequest struct {
@@ -106,18 +106,11 @@ func currentActorName(c *gin.Context) string {
 
 func handleAuthLogout(authService *auth.Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		raw, err := c.Cookie(sessionCookieName)
+		raw, err := readSessionCookie(c)
 		if err == nil && strings.TrimSpace(raw) != "" {
 			_ = authService.Logout(c.Request.Context(), raw)
 		}
-		http.SetCookie(c.Writer, &http.Cookie{
-			Name:     sessionCookieName,
-			Value:    "",
-			Path:     "/",
-			HttpOnly: true,
-			MaxAge:   -1,
-			SameSite: http.SameSiteLaxMode,
-		})
+		clearSessionCookies(c)
 		c.JSON(http.StatusOK, response.Success(gin.H{"ok": true}))
 	}
 }

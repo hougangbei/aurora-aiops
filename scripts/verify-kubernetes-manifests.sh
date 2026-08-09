@@ -33,12 +33,12 @@ kubectl auth reconcile --dry-run=client \
 kubectl auth reconcile --dry-run=client \
   -f deploy/kubernetes/rbac-executor.yaml >/dev/null
 
-if rg -q 'KUBEJOJO_KUBECONFIG|kubejojo-kubeconfig|name: kubeconfig' deploy/kubernetes/deployment.yaml; then
+if rg -q 'AURORA_AIOPS_KUBECONFIG|aurora-aiops-kubeconfig|name: kubeconfig' deploy/kubernetes/deployment.yaml; then
   fail "deployment must not mount or select kubeconfig"
 fi
-rg -q 'name: KUBEJOJO_RUNTIME_DIR' deploy/kubernetes/deployment.yaml || fail "runtime directory environment missing"
-rg -q 'value: /var/run/kubejojo' deploy/kubernetes/deployment.yaml || fail "runtime directory value missing"
-rg -q 'mountPath: /var/run/kubejojo' deploy/kubernetes/deployment.yaml || fail "runtime directory mount missing"
+rg -q 'name: AURORA_AIOPS_RUNTIME_DIR' deploy/kubernetes/deployment.yaml || fail "runtime directory environment missing"
+rg -q 'value: /var/run/aurora-aiops' deploy/kubernetes/deployment.yaml || fail "runtime directory value missing"
+rg -q 'mountPath: /var/run/aurora-aiops' deploy/kubernetes/deployment.yaml || fail "runtime directory mount missing"
 rg -q 'medium: Memory' deploy/kubernetes/deployment.yaml || fail "runtime directory must use an in-memory volume"
 rg -q '^kind: ClusterRole$' deploy/kubernetes/rbac.yaml || fail "readonly ClusterRole missing"
 rg -q '^kind: ClusterRoleBinding$' deploy/kubernetes/rbac.yaml || fail "readonly ClusterRoleBinding missing"

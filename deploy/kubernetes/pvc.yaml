@@ -1,8 +1,8 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: kubejojo-data
-  namespace: kubejojo
+  name: aurora-aiops-data
+  namespace: aurora-aiops
 spec:
   accessModes:
   - ReadWriteOnce

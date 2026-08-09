@@ -12,10 +12,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: net-target
-  namespace: kubejojo-lab
+  namespace: aurora-aiops-lab
   labels:
-    app.kubernetes.io/part-of: kubejojo-experiment
-    kubejojo.io/scenario: net-deny
+    app.kubernetes.io/part-of: aurora-aiops-experiment
+    aurora-aiops.io/scenario: net-deny
 spec:
   replicas: 1
   selector:
@@ -24,8 +24,8 @@ spec:
     metadata:
       labels:
         app: net-target
-        app.kubernetes.io/part-of: kubejojo-experiment
-        kubejojo.io/scenario: net-deny
+        app.kubernetes.io/part-of: aurora-aiops-experiment
+        aurora-aiops.io/scenario: net-deny
     spec:
       containers:
       - name: nginx
@@ -36,10 +36,10 @@ apiVersion: v1
 kind: Service
 metadata:
   name: net-target
-  namespace: kubejojo-lab
+  namespace: aurora-aiops-lab
   labels:
-    app.kubernetes.io/part-of: kubejojo-experiment
-    kubejojo.io/scenario: net-deny
+    app.kubernetes.io/part-of: aurora-aiops-experiment
+    aurora-aiops.io/scenario: net-deny
 spec:
   selector:
     app: net-target
@@ -51,10 +51,10 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: net-deny-all
-  namespace: kubejojo-lab
+  namespace: aurora-aiops-lab
   labels:
-    app.kubernetes.io/part-of: kubejojo-experiment
-    kubejojo.io/scenario: net-deny
+    app.kubernetes.io/part-of: aurora-aiops-experiment
+    aurora-aiops.io/scenario: net-deny
 spec:
   podSelector:
     matchLabels: {app: net-target}

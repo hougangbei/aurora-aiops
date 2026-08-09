@@ -20,15 +20,15 @@ import (
 	"k8s.io/client-go/rest"
 	metricsfake "k8s.io/metrics/pkg/client/clientset/versioned/fake"
 
-	"github.com/heihuzicity-tech/kubejojo/server/internal/aiops"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/audit"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/auth"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/evidence"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/kube"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/llm"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/remediation"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/service"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/store"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/aiops"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/audit"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/auth"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/evidence"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/kube"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/llm"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/remediation"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/service"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/store"
 )
 
 type routeFakeCollector struct{}

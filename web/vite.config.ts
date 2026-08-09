@@ -2,7 +2,9 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
-const outDir = process.env.KUBEJOJO_WEB_OUT_DIR || 'dist';
+import { resolveWebOutDir } from './buildEnvCompat';
+
+const outDir = resolveWebOutDir(process.env);
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],

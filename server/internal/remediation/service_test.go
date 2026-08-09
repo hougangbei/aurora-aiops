@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heihuzicity-tech/kubejojo/server/internal/aiops"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/audit"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/store"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/aiops"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/audit"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/store"
 )
 
 // newRemediationTestService wires a remediation Service against a real SQLite

@@ -2,8 +2,8 @@ apiVersion: cilium.io/v2
 kind: CiliumLoadBalancerIPPool
 metadata:
   labels:
-    app.kubernetes.io/part-of: kubejojo-demo
-  name: kubejojo-demo-ingress
+    app.kubernetes.io/part-of: aurora-aiops-demo
+  name: aurora-aiops-demo-ingress
 spec:
   blocks:
     - start: 10.0.0.240
@@ -13,8 +13,8 @@ apiVersion: cilium.io/v2alpha1
 kind: CiliumL2AnnouncementPolicy
 metadata:
   labels:
-    app.kubernetes.io/part-of: kubejojo-demo
-  name: kubejojo-demo-ingress
+    app.kubernetes.io/part-of: aurora-aiops-demo
+  name: aurora-aiops-demo-ingress
 spec:
   interfaces:
     - ^enp2s0$

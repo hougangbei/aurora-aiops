@@ -18,8 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/heihuzicity-tech/kubejojo/server/internal/buildinfo"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/config"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/buildinfo"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/config"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -345,7 +345,7 @@ func TestDownloadFileUsesCallerContextWithoutInjectedDeadline(t *testing.T) {
 
 	service := NewUpdateService(buildinfo.Info{}, config.UpdateConfig{}, false)
 	tempDir := t.TempDir()
-	destPath := tempDir + "/kubejojo.tar.gz"
+	destPath := tempDir + "/aurora-aiops.tar.gz"
 
 	var hasDeadline bool
 	service.httpClient.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
@@ -358,7 +358,7 @@ func TestDownloadFileUsesCallerContextWithoutInjectedDeadline(t *testing.T) {
 		}, nil
 	})
 
-	if err := service.downloadFile(context.Background(), "https://github.com/example/project/releases/download/v1.0.0/kubejojo.tar.gz", destPath); err != nil {
+	if err := service.downloadFile(context.Background(), "https://github.com/example/project/releases/download/v1.0.0/aurora-aiops.tar.gz", destPath); err != nil {
 		t.Fatalf("downloadFile() returned error: %v", err)
 	}
 
@@ -379,7 +379,7 @@ func TestCheckForActorMarksPendingRestartFromInstalledVersion(t *testing.T) {
 	t.Parallel()
 
 	tempDir := t.TempDir()
-	managedPath := filepath.Join(tempDir, "kubejojo")
+	managedPath := filepath.Join(tempDir, "aurora-aiops")
 	backupPath := managedPath + ".backup"
 	writeVersionScript(t, managedPath, "0.1.4")
 	writeVersionScript(t, backupPath, "0.1.3")
@@ -446,7 +446,7 @@ func TestCheckForActorIgnoresBackupWhenVersionMatchesInstalled(t *testing.T) {
 	t.Parallel()
 
 	tempDir := t.TempDir()
-	managedPath := filepath.Join(tempDir, "kubejojo")
+	managedPath := filepath.Join(tempDir, "aurora-aiops")
 	backupPath := managedPath + ".backup"
 	writeVersionScript(t, managedPath, "0.1.4")
 	writeVersionScript(t, backupPath, "0.1.4")
@@ -486,10 +486,10 @@ func TestPerformUpdateUsesConfiguredTargetPathAndStagesRestart(t *testing.T) {
 	t.Parallel()
 
 	tempDir := t.TempDir()
-	managedPath := filepath.Join(tempDir, "kubejojo")
+	managedPath := filepath.Join(tempDir, "aurora-aiops")
 	writeVersionScript(t, managedPath, "0.1.3")
 
-	archiveName := "kubejojo_0.1.4_" + runtime.GOOS + "_" + runtime.GOARCH + ".tar.gz"
+	archiveName := "aurora-aiops_0.1.4_" + runtime.GOOS + "_" + runtime.GOARCH + ".tar.gz"
 	archivePath := filepath.Join(tempDir, archiveName)
 	createReleaseArchive(t, archivePath, "0.1.4")
 	checksum := fileSHA256(t, archivePath)
@@ -523,7 +523,7 @@ func TestRollbackSwapsManagedAndBackupVersions(t *testing.T) {
 	t.Parallel()
 
 	tempDir := t.TempDir()
-	managedPath := filepath.Join(tempDir, "kubejojo")
+	managedPath := filepath.Join(tempDir, "aurora-aiops")
 	backupPath := managedPath + ".backup"
 	writeVersionScript(t, managedPath, "0.1.4")
 	writeVersionScript(t, backupPath, "0.1.3")
@@ -552,9 +552,9 @@ func TestRollbackSwapsManagedAndBackupVersions(t *testing.T) {
 func TestNormalizeManagedBinaryPathStripsLegacyBackupSuffixes(t *testing.T) {
 	t.Parallel()
 
-	actual := normalizeManagedBinaryPath("/opt/kubejojo/kubejojo.backup.backup")
-	if actual != "/opt/kubejojo/kubejojo" {
-		t.Fatalf("normalizeManagedBinaryPath() = %q, want %q", actual, "/opt/kubejojo/kubejojo")
+	actual := normalizeManagedBinaryPath("/opt/aurora-aiops/aurora-aiops.backup.backup")
+	if actual != "/opt/aurora-aiops/aurora-aiops" {
+		t.Fatalf("normalizeManagedBinaryPath() = %q, want %q", actual, "/opt/aurora-aiops/aurora-aiops")
 	}
 }
 
@@ -562,7 +562,7 @@ func writeVersionScript(t *testing.T, path string, version string) {
 	t.Helper()
 
 	content := fmt.Sprintf(
-		"#!/bin/sh\nif [ \"$1\" = \"-version\" ]; then\n  echo 'kubejojo %s (commit: test, built: test, type: release)'\n  exit 0\nfi\nexit 0\n",
+		"#!/bin/sh\nif [ \"$1\" = \"-version\" ]; then\n  echo 'aurora-aiops %s (commit: test, built: test, type: release)'\n  exit 0\nfi\nexit 0\n",
 		version,
 	)
 	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
@@ -674,12 +674,12 @@ func createReleaseArchive(t *testing.T, archivePath string, version string) {
 	defer tarWriter.Close()
 
 	content := fmt.Sprintf(
-		"#!/bin/sh\nif [ \"$1\" = \"-version\" ]; then\n  echo 'kubejojo %s (commit: test, built: test, type: release)'\n  exit 0\nfi\nexit 0\n",
+		"#!/bin/sh\nif [ \"$1\" = \"-version\" ]; then\n  echo 'aurora-aiops %s (commit: test, built: test, type: release)'\n  exit 0\nfi\nexit 0\n",
 		version,
 	)
 
 	header := &tar.Header{
-		Name: "kubejojo",
+		Name: "aurora-aiops",
 		Mode: 0o755,
 		Size: int64(len(content)),
 	}

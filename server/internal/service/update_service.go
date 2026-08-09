@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/heihuzicity-tech/kubejojo/server/internal/buildinfo"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/config"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/buildinfo"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/config"
 )
 
 const (
@@ -32,7 +32,7 @@ const (
 	updateOperationTTL  = 30 * time.Minute
 	gitHubAPIRequestTTL = 30 * time.Second
 	binaryProbeTTL      = 5 * time.Second
-	defaultUserAgent    = "kubejojo-update-client"
+	defaultUserAgent    = "aurora-aiops-update-client"
 )
 
 var allowedUpdateHosts = map[string]struct{}{
@@ -257,7 +257,7 @@ func (s *UpdateService) PerformUpdate(ctx context.Context, actor string) (*Updat
 	}
 
 	exeDir := filepath.Dir(managedBinaryPath)
-	tempDir, err := os.MkdirTemp(exeDir, ".kubejojo-update-*")
+	tempDir, err := os.MkdirTemp(exeDir, ".aurora-aiops-update-*")
 	if err != nil {
 		return nil, fmt.Errorf("create update temp dir: %w", err)
 	}
@@ -271,7 +271,7 @@ func (s *UpdateService) PerformUpdate(ctx context.Context, actor string) (*Updat
 		return nil, err
 	}
 
-	newBinaryPath := filepath.Join(tempDir, "kubejojo")
+	newBinaryPath := filepath.Join(tempDir, "aurora-aiops")
 	if err := extractBinaryFromArchive(archivePath, newBinaryPath); err != nil {
 		return nil, err
 	}
@@ -487,7 +487,7 @@ func (s *UpdateService) fetchLatestStableReleaseFromList(ctx context.Context, re
 		var apiErr *githubAPIError
 		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
 			return nil, fmt.Errorf(
-				"cannot access GitHub releases for %s; verify KUBEJOJO_UPDATE_REPOSITORY or set KUBEJOJO_UPDATE_GITHUB_TOKEN if the repository is private",
+				"cannot access GitHub releases for %s; verify AURORA_AIOPS_UPDATE_REPOSITORY or set AURORA_AIOPS_UPDATE_GITHUB_TOKEN if the repository is private",
 				repo,
 			)
 		}
@@ -498,7 +498,7 @@ func (s *UpdateService) fetchLatestStableReleaseFromList(ctx context.Context, re
 	if err != nil {
 		if hasUsablePrerelease(releases) {
 			return nil, fmt.Errorf(
-				"no stable release is published for %s yet; set KUBEJOJO_UPDATE_ALLOW_PRERELEASES=true to use prerelease builds",
+				"no stable release is published for %s yet; set AURORA_AIOPS_UPDATE_ALLOW_PRERELEASES=true to use prerelease builds",
 				repo,
 			)
 		}
@@ -514,7 +514,7 @@ func (s *UpdateService) fetchLatestReleaseIncludingPrereleases(ctx context.Conte
 		var apiErr *githubAPIError
 		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
 			return nil, fmt.Errorf(
-				"cannot access GitHub releases for %s; verify KUBEJOJO_UPDATE_REPOSITORY or set KUBEJOJO_UPDATE_GITHUB_TOKEN if the repository is private",
+				"cannot access GitHub releases for %s; verify AURORA_AIOPS_UPDATE_REPOSITORY or set AURORA_AIOPS_UPDATE_GITHUB_TOKEN if the repository is private",
 				repo,
 			)
 		}
@@ -835,7 +835,7 @@ func extractBinaryFromArchive(archivePath string, destPath string) error {
 		if header.FileInfo().IsDir() {
 			continue
 		}
-		if filepath.Base(header.Name) != "kubejojo" {
+		if filepath.Base(header.Name) != "aurora-aiops" {
 			continue
 		}
 
@@ -853,7 +853,7 @@ func extractBinaryFromArchive(archivePath string, destPath string) error {
 		return nil
 	}
 
-	return fmt.Errorf("binary kubejojo not found in archive")
+	return fmt.Errorf("binary aurora-aiops not found in archive")
 }
 
 func validateUpdateURL(value *url.URL) error {
@@ -978,7 +978,7 @@ func (s *UpdateService) readOptionalBinaryVersion(path string) (string, error) {
 
 func parseVersionOutput(output []byte) (string, error) {
 	fields := strings.Fields(strings.TrimSpace(string(output)))
-	if len(fields) < 2 || !strings.EqualFold(fields[0], "kubejojo") {
+	if len(fields) < 2 || !strings.EqualFold(fields[0], "aurora-aiops") {
 		return "", fmt.Errorf("unexpected version output: %q", strings.TrimSpace(string(output)))
 	}
 
@@ -1092,7 +1092,7 @@ func (s *UpdateService) invalidateCache() {
 }
 
 func (s *UpdateService) expectedArchiveName(version string) string {
-	return fmt.Sprintf("kubejojo_%s_%s_%s.tar.gz", version, runtime.GOOS, runtime.GOARCH)
+	return fmt.Sprintf("aurora-aiops_%s_%s_%s.tar.gz", version, runtime.GOOS, runtime.GOARCH)
 }
 
 func (s *UpdateService) baseMessage() string {

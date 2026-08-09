@@ -17,7 +17,7 @@
 - `viewer` is read-only; `operator` may create/reanalyze/approve/reject incidents and test the connection; `admin` additionally owns execution, rollback, experiments, Pod exec, raw manifests, resource mutation, and system lifecycle operations.
 - Approval is fail-closed: the UI requires a valid stored effective review, while the backend independently rebuilds a fresh deterministic effective review from the remediation plan before every approval.
 - Concurrent transitions must produce one winner and `409 STATE_TRANSITION_CONFLICT` for losers; losing decisions must not append audit records.
-- The default Kubernetes deployment must not set `KUBEJOJO_KUBECONFIG` or mount a kubeconfig Secret.
+- The default Kubernetes deployment must not set `AURORA_AIOPS_KUBECONFIG` or mount a kubeconfig Secret.
 
 ## Task 1: Enforce platform HTTP RBAC with a default-admin write policy
 
@@ -86,8 +86,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/heihuzicity-tech/kubejojo/server/internal/auth"
-	"github.com/heihuzicity-tech/kubejojo/server/internal/response"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/auth"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/response"
 )
 
 var operatorWritePaths = map[string]struct{}{
@@ -602,8 +602,8 @@ Commit: `git add web/src/modules/aiops && git commit -m "fix(web): gate approval
 Use `t.Setenv` for both kubeconfig variables and assert:
 
 ```text
-KUBEJOJO_KUBECONFIG=/explicit  and KUBECONFIG=/secondary -> /explicit
-KUBEJOJO_KUBECONFIG empty and KUBECONFIG=/first:/second -> /first
+AURORA_AIOPS_KUBECONFIG=/explicit  and KUBECONFIG=/secondary -> /explicit
+AURORA_AIOPS_KUBECONFIG empty and KUBECONFIG=/first:/second -> /first
 both empty -> empty string (selection deferred to kube.NewSharedClient)
 ```
 
@@ -635,7 +635,7 @@ Expected: FAIL because empty config currently resolves at config load time and `
 
 - [ ] **Step 4: Move fallback selection into the client factory.**
 
-Change `kubeconfigPath()` to return only `KUBEJOJO_KUBECONFIG`, then the first non-empty `KUBECONFIG` entry, then `""`. Remove the now-unused `filepath` home fallback from the config package.
+Change `kubeconfigPath()` to return only `AURORA_AIOPS_KUBECONFIG`, then the first non-empty `KUBECONFIG` entry, then `""`. Remove the now-unused `filepath` home fallback from the config package.
 
 Implement this structure in `client.go`:
 
@@ -704,7 +704,7 @@ Create an executable `scripts/verify-kubernetes-manifests.sh` with `set -euo pip
 1. Require `kubectl` with `command -v kubectl`.
 2. Run `kubectl apply --dry-run=client --validate=false -f` on namespace, readonly RBAC, PVC, deployment, and service.
 3. Run the same command on the opt-in executor RBAC separately.
-4. Fail if `deployment.yaml` contains `KUBEJOJO_KUBECONFIG`, `kubejojo-kubeconfig`, or a kubeconfig volume.
+4. Fail if `deployment.yaml` contains `AURORA_AIOPS_KUBECONFIG`, `aurora-aiops-kubeconfig`, or a kubeconfig volume.
 5. Assert `rbac.yaml` contains `kind: ClusterRole` and `kind: ClusterRoleBinding`.
 6. Assert `deployment.yaml` contains both bootstrap-admin Secret keys.
 
@@ -748,7 +748,7 @@ kubectl auth reconcile --dry-run=client \
 kubectl auth reconcile --dry-run=client \
   -f deploy/kubernetes/rbac-executor.yaml >/dev/null
 
-if rg -q 'KUBEJOJO_KUBECONFIG|kubejojo-kubeconfig|name: kubeconfig' deploy/kubernetes/deployment.yaml; then
+if rg -q 'AURORA_AIOPS_KUBECONFIG|aurora-aiops-kubeconfig|name: kubeconfig' deploy/kubernetes/deployment.yaml; then
   fail "deployment must not mount or select kubeconfig"
 fi
 rg -q '^kind: ClusterRole$' deploy/kubernetes/rbac.yaml || fail "readonly ClusterRole missing"
@@ -773,7 +773,7 @@ Create `namespace.yaml` exactly as:
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: kubejojo
+  name: aurora-aiops
 ```
 
 Create `pvc.yaml` exactly as:
@@ -782,8 +782,8 @@ Create `pvc.yaml` exactly as:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: kubejojo-data
-  namespace: kubejojo
+  name: aurora-aiops-data
+  namespace: aurora-aiops
 spec:
   accessModes:
   - ReadWriteOnce
@@ -796,33 +796,33 @@ Do not set a cluster-specific storage class.
 
 - [ ] **Step 4: Replace namespaced read RBAC with cluster-scoped read RBAC.**
 
-In `rbac.yaml`, keep only the default `kubejojo-readonly` ServiceAccount, then define a `ClusterRole` and `ClusterRoleBinding`. Preserve read verbs for the resources currently listed, including cluster-scoped nodes, namespaces, persistentvolumes, storageclasses, ingressclasses, and the namespaced resources across all namespaces. Do not add any create/update/patch/delete verb and do not add `pods/exec`.
+In `rbac.yaml`, keep only the default `aurora-aiops-readonly` ServiceAccount, then define a `ClusterRole` and `ClusterRoleBinding`. Preserve read verbs for the resources currently listed, including cluster-scoped nodes, namespaces, persistentvolumes, storageclasses, ingressclasses, and the namespaced resources across all namespaces. Do not add any create/update/patch/delete verb and do not add `pods/exec`.
 
 - [ ] **Step 5: Isolate the opt-in executor identity.**
 
 In `rbac-executor.yaml`, create:
 
-- ServiceAccount `kubejojo-executor`;
-- a ClusterRoleBinding from that ServiceAccount to `kubejojo-readonly`;
-- ClusterRole `kubejojo-executor-write` with only `get/list/watch/update/patch` on `apps/deployments` and `batch/cronjobs`;
+- ServiceAccount `aurora-aiops-executor`;
+- a ClusterRoleBinding from that ServiceAccount to `aurora-aiops-readonly`;
+- ClusterRole `aurora-aiops-executor-write` with only `get/list/watch/update/patch` on `apps/deployments` and `batch/cronjobs`;
 - a ClusterRoleBinding from the executor ServiceAccount to that write role.
 
 Do not grant Pod exec, Secret mutation, namespace mutation, wildcard resources, or wildcard verbs.
 
 - [ ] **Step 6: Make Deployment use ServiceAccount identity and bootstrap secrets.**
 
-Delete the `KUBEJOJO_KUBECONFIG` env, kubeconfig volume mount, and kubeconfig Secret volume. Keep `serviceAccountName: kubejojo-readonly`. Add:
+Delete the `AURORA_AIOPS_KUBECONFIG` env, kubeconfig volume mount, and kubeconfig Secret volume. Keep `serviceAccountName: aurora-aiops-readonly`. Add:
 
 ```yaml
-- name: KUBEJOJO_BOOTSTRAP_ADMIN_USER
+- name: AURORA_AIOPS_BOOTSTRAP_ADMIN_USER
   valueFrom:
     secretKeyRef:
-      name: kubejojo-secrets
+      name: aurora-aiops-secrets
       key: bootstrap-admin-user
-- name: KUBEJOJO_BOOTSTRAP_ADMIN_PASSWORD
+- name: AURORA_AIOPS_BOOTSTRAP_ADMIN_PASSWORD
   valueFrom:
     secretKeyRef:
-      name: kubejojo-secrets
+      name: aurora-aiops-secrets
       key: bootstrap-admin-password
 ```
 
@@ -834,16 +834,16 @@ In `deploy/kubernetes/README.md`, document these commands in order:
 
 ```sh
 kubectl apply -f deploy/kubernetes/namespace.yaml
-kubectl -n kubejojo create secret generic kubejojo-secrets \
-  --from-literal=bootstrap-admin-user="$KUBEJOJO_ADMIN_USER" \
-  --from-literal=bootstrap-admin-password="$KUBEJOJO_ADMIN_PASSWORD"
+kubectl -n aurora-aiops create secret generic aurora-aiops-secrets \
+  --from-literal=bootstrap-admin-user="$AURORA_AIOPS_ADMIN_USER" \
+  --from-literal=bootstrap-admin-password="$AURORA_AIOPS_ADMIN_PASSWORD"
 kubectl apply -f deploy/kubernetes/rbac.yaml
 kubectl apply -f deploy/kubernetes/pvc.yaml
 kubectl apply -f deploy/kubernetes/deployment.yaml
 kubectl apply -f deploy/kubernetes/service.yaml
 ```
 
-Explain that default mode is cluster-wide read-only and therefore execution/rollback/Pod exec fail at Kubernetes authorization. For executor mode, apply `rbac-executor.yaml` and patch `serviceAccountName` to `kubejojo-executor`; execution remains limited to Deployment/CronJob writes and Pod exec remains denied.
+Explain that default mode is cluster-wide read-only and therefore execution/rollback/Pod exec fail at Kubernetes authorization. For executor mode, apply `rbac-executor.yaml` and patch `serviceAccountName` to `aurora-aiops-executor`; execution remains limited to Deployment/CronJob writes and Pod exec remains denied.
 
 Update the root README and single-cluster architecture doc only where they describe identity precedence, default install, env variables, and RBAC. Remove claims that the provided manifest requires a shared kubeconfig Secret. Do not rewrite unrelated stage-two documentation.
 
@@ -853,7 +853,7 @@ Run: `chmod +x scripts/verify-kubernetes-manifests.sh && ./scripts/verify-kubern
 
 Expected: PASS with client-side dry-run success for every manifest group.
 
-Run: `rg -n 'KUBEJOJO_KUBECONFIG|kubejojo-kubeconfig' deploy/kubernetes/deployment.yaml`
+Run: `rg -n 'AURORA_AIOPS_KUBECONFIG|aurora-aiops-kubeconfig' deploy/kubernetes/deployment.yaml`
 
 Expected: no output, exit 1.
 
@@ -915,14 +915,14 @@ Run the local manifest check:
 When a disposable validation cluster/context is explicitly selected, apply the manifests and run:
 
 ```sh
-kubectl auth can-i list nodes --as=system:serviceaccount:kubejojo:kubejojo-readonly
-kubectl auth can-i patch deployments -n default --as=system:serviceaccount:kubejojo:kubejojo-readonly
-kubectl auth can-i delete namespaces --as=system:serviceaccount:kubejojo:kubejojo-readonly
-kubectl auth can-i list nodes --as=system:serviceaccount:kubejojo:kubejojo-executor
-kubectl auth can-i patch deployments -n default --as=system:serviceaccount:kubejojo:kubejojo-executor
-kubectl auth can-i update cronjobs -n default --as=system:serviceaccount:kubejojo:kubejojo-executor
-kubectl auth can-i create pods/exec -n default --as=system:serviceaccount:kubejojo:kubejojo-executor
-kubectl auth can-i delete namespaces --as=system:serviceaccount:kubejojo:kubejojo-executor
+kubectl auth can-i list nodes --as=system:serviceaccount:aurora-aiops:aurora-aiops-readonly
+kubectl auth can-i patch deployments -n default --as=system:serviceaccount:aurora-aiops:aurora-aiops-readonly
+kubectl auth can-i delete namespaces --as=system:serviceaccount:aurora-aiops:aurora-aiops-readonly
+kubectl auth can-i list nodes --as=system:serviceaccount:aurora-aiops:aurora-aiops-executor
+kubectl auth can-i patch deployments -n default --as=system:serviceaccount:aurora-aiops:aurora-aiops-executor
+kubectl auth can-i update cronjobs -n default --as=system:serviceaccount:aurora-aiops:aurora-aiops-executor
+kubectl auth can-i create pods/exec -n default --as=system:serviceaccount:aurora-aiops:aurora-aiops-executor
+kubectl auth can-i delete namespaces --as=system:serviceaccount:aurora-aiops:aurora-aiops-executor
 ```
 
 Expected in order: `yes, no, no, yes, yes, yes, no, no`.

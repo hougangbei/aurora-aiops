@@ -126,7 +126,7 @@ func (s *Service) BootstrapAdmin(ctx context.Context, username, password string)
 
 	username = strings.TrimSpace(username)
 	if username == "" || password == "" {
-		return errors.New("bootstrap admin requires KUBEJOJO_BOOTSTRAP_ADMIN_USER and KUBEJOJO_BOOTSTRAP_ADMIN_PASSWORD")
+		return errors.New("bootstrap admin requires AURORA_AIOPS_BOOTSTRAP_ADMIN_USER and AURORA_AIOPS_BOOTSTRAP_ADMIN_PASSWORD")
 	}
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {

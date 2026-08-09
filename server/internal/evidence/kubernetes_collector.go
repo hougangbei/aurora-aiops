@@ -13,7 +13,7 @@ import (
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
 
-	"github.com/heihuzicity-tech/kubejojo/server/internal/cluster"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/cluster"
 )
 
 const (

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/heihuzicity-tech/kubejojo/server/internal/evidence"
+	"github.com/heihuzicity-tech/aurora-aiops/server/internal/evidence"
 )
 
 // Record is one append-only audit entry. Hash chains every record to the

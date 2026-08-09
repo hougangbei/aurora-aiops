@@ -54,3 +54,11 @@ func compatibleAIOpsDBPath() string {
 
 	return "./data/aurora-aiops.db"
 }
+
+func BootstrapAdminCredentials() (username string, password string) {
+	return getEnvCompat("BOOTSTRAP_ADMIN_USER", ""), getEnvCompat("BOOTSTRAP_ADMIN_PASSWORD", "")
+}
+
+func RuntimeDir() string {
+	return getEnvCompat("RUNTIME_DIR", "")
+}

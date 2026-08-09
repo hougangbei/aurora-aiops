@@ -75,6 +75,25 @@ func TestLoginRejectsWrongPassword(t *testing.T) {
 	}
 }
 
+func TestLoginAcceptsSixCharacterPassword(t *testing.T) {
+	repo := openTestRepo(t)
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("123456"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.CreateUser(context.Background(), User{
+		ID: "user-six-character-password", Username: "admin", PasswordHash: string(passwordHash),
+		Role: RoleAdmin, Enabled: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := NewService(repo, 8*time.Hour, time.Now)
+	if _, _, err := svc.Login(context.Background(), "admin", "123456"); err != nil {
+		t.Fatalf("six-character password should be accepted: %v", err)
+	}
+}
+
 func TestLoginUnknownUserSameError(t *testing.T) {
 	repo := openTestRepo(t)
 	createAdminUser(t, repo)

@@ -44,7 +44,7 @@ func (s *Service) Login(ctx context.Context, username, password string) (rawSess
 	if len(username) < 3 || len(username) > 64 {
 		return "", User{}, ErrInvalidCredentials
 	}
-	if len(password) < 8 || len(password) > 128 {
+	if len(password) < 6 || len(password) > 128 {
 		return "", User{}, ErrInvalidCredentials
 	}
 

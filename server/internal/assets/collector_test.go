@@ -139,7 +139,7 @@ func TestCollectorParsesRHELAndNormalizesARM64(t *testing.T) {
 	for _, fixture := range []struct{ id, want string }{{"rhel", "rhel"}, {"rocky", "rhel"}, {"centos", "rhel"}} {
 		t.Run(fixture.id, func(t *testing.T) {
 			responses := collectorResponses(collectorBase("ID="+fixture.id+"\nVERSION_ID='9.4'\n", "aarch64"))
-			responses[commands[collectorCommandRPM].Command] = collectorFakeResponse{result: CommandResult{Stdout: "bash\t5.1.8-9.el9\taarch64\nbash\t5.1.8-9.el9\taarch64\n"}}
+			responses[commands[collectorCommandRPM].Command] = collectorFakeResponse{result: CommandResult{Stdout: "bash\t0:5.1.8-9.el9\taarch64\nbash\t0:5.1.8-9.el9\taarch64\n"}}
 			remote := &collectorFakeRemote{responses: responses}
 			snapshot, software, err := NewCollector(remote, time.Now).Collect(context.Background(), Server{ID: "s"}, CredentialSecret{})
 			if err != nil {
@@ -148,7 +148,7 @@ func TestCollectorParsesRHELAndNormalizesARM64(t *testing.T) {
 			if snapshot.OSFamily != fixture.want || snapshot.OSVersion != "9.4" || snapshot.Architecture != "arm64" {
 				t.Fatalf("snapshot = %#v", snapshot)
 			}
-			want := []SoftwareItem{{Category: "package", Name: "bash", Version: "5.1.8-9.el9", Architecture: "arm64", Source: "rpm"}}
+			want := []SoftwareItem{{Category: "package", Name: "bash", Version: "0:5.1.8-9.el9", Architecture: "arm64", Source: "rpm"}}
 			if !reflect.DeepEqual(software, want) {
 				t.Fatalf("software = %#v, want %#v", software, want)
 			}
@@ -179,7 +179,9 @@ func TestCollectorNormalizesDebianFamilyReleases(t *testing.T) {
 func TestCollectorDebianPackagesRequireInstalledState(t *testing.T) {
 	output := "installed\t2.0\tamd64\tinstalled\n" +
 		"rc-package\t1.0\tamd64\tconfig-files\n" +
+		"rc-empty\t\t\tconfig-files\n" +
 		"absent\t1.0\tamd64\tnot-installed\n" +
+		"absent-empty\t\t\tnot-installed\n" +
 		"transition1\t1.0\tamd64\thalf-installed\n" +
 		"transition2\t1.0\tamd64\tunpacked\n" +
 		"transition3\t1.0\tamd64\thalf-configured\n" +
@@ -195,6 +197,25 @@ func TestCollectorDebianPackagesRequireInstalledState(t *testing.T) {
 	command := collectorCommandsForTest()[collectorCommandDebian].Command
 	if !strings.Contains(command, `${db:Status-Status}`) {
 		t.Fatalf("dpkg command lacks machine-readable installed state: %q", command)
+	}
+}
+
+func TestCollectorRPMUsesAndValidatesFullEVR(t *testing.T) {
+	command := collectorCommandsForTest()[collectorCommandRPM].Command
+	if !strings.Contains(command, `%{EPOCHNUM}:%{VERSION}-%{RELEASE}`) {
+		t.Fatalf("rpm command does not emit normalized EVR: %q", command)
+	}
+	output := "base\t0:6.10-1.el9\tx86_64\n" +
+		"epoch\t2:1.0-4.el9\tx86_64\n" +
+		"missing-epoch\t6.10-1.el9\tx86_64\n" +
+		"bad-epoch\tnone:1.0-1.el9\tx86_64\n"
+	items, malformed := parseCollectorPackages(collectorCommandRPM, CommandResult{Stdout: output}, "amd64")
+	want := []SoftwareItem{
+		{Category: "package", Name: "base", Version: "0:6.10-1.el9", Architecture: "amd64", Source: "rpm"},
+		{Category: "package", Name: "epoch", Version: "2:1.0-4.el9", Architecture: "amd64", Source: "rpm"},
+	}
+	if !reflect.DeepEqual(items, want) || malformed != 2 {
+		t.Fatalf("items=%#v malformed=%d, want %#v malformed=2", items, malformed, want)
 	}
 }
 
@@ -314,8 +335,8 @@ func TestCollectorParsersReportMalformedRecordsAndKeepValidRecords(t *testing.T)
 			parse: func(result CommandResult) ([]SoftwareItem, int) {
 				return parseCollectorPackages(collectorCommandRPM, result, "amd64")
 			},
-			output:    "bash\t5.1.8-9.el9\tx86_64\ntoo\tfew\n\t1.0\tx86_64\nbad\x00name\t1.0\tx86_64\n" + longName + "\t1.0\tx86_64\nincomplete\t1.0",
-			want:      SoftwareItem{Category: "package", Name: "bash", Version: "5.1.8-9.el9", Architecture: "amd64", Source: "rpm"},
+			output:    "bash\t0:5.1.8-9.el9\tx86_64\ntoo\tfew\n\t0:1.0-1\tx86_64\nbad\x00name\t0:1.0-1\tx86_64\n" + longName + "\t0:1.0-1\tx86_64\nincomplete\t0:1.0-1",
+			want:      SoftwareItem{Category: "package", Name: "bash", Version: "0:5.1.8-9.el9", Architecture: "amd64", Source: "rpm"},
 			malformed: 5,
 		},
 		{
@@ -361,7 +382,7 @@ func TestCollectorAddsOneMalformedWarningPerOptionalCommand(t *testing.T) {
 		name, osRelease, arch, commandID, output string
 	}{
 		{name: "dpkg", osRelease: "ID=ubuntu\nVERSION_ID=24.04\n", arch: "x86_64", commandID: collectorCommandDebian, output: "curl\t8.5.0\tamd64\tinstalled\nbroken\n"},
-		{name: "rpm", osRelease: "ID=rocky\nVERSION_ID=9.4\n", arch: "aarch64", commandID: collectorCommandRPM, output: "bash\t5.1\taarch64\nbroken\n"},
+		{name: "rpm", osRelease: "ID=rocky\nVERSION_ID=9.4\n", arch: "aarch64", commandID: collectorCommandRPM, output: "bash\t0:5.1-1\taarch64\nbroken\n"},
 		{name: "apk", osRelease: "ID=alpine\nVERSION_ID=3.20\n", arch: "x86_64", commandID: collectorCommandAPK, output: "musl-1.2-r0\nbroken\n"},
 		{name: "services", osRelease: "ID=ubuntu\nVERSION_ID=24.04\n", arch: "x86_64", commandID: collectorCommandServices, output: "sshd.service enabled\nbroken.service\n"},
 		{name: "versions", osRelease: "ID=ubuntu\nVERSION_ID=24.04\n", arch: "x86_64", commandID: collectorCommandVersions, output: "runtime\tdocker\t27.1\tamd64\trunning\nbroken\n"},
@@ -655,6 +676,62 @@ func TestCollectorPackageVersionComparisonAndWinnerSelection(t *testing.T) {
 	}
 	if got := compareCollectorPackageVersions("01.002", "1.2"); got != 0 {
 		t.Fatalf("numeric semantic equality = %d, want 0", got)
+	}
+}
+
+func TestCollectorRPMEVRComparisonAndSourceDispatch(t *testing.T) {
+	tests := []struct {
+		name, lower, higher string
+	}{
+		{name: "numeric version", lower: "0:6.9-9", higher: "0:6.10-1"},
+		{name: "epoch", lower: "0:99-9", higher: "1:1.0-1"},
+		{name: "separator then numeric", lower: "0:1.0+git2-1", higher: "0:1.0.git10-1"},
+		{name: "tilde prerelease", lower: "0:1.0~rc1-1", higher: "0:1.0-1"},
+		{name: "release digits", lower: "0:1.0-r9", higher: "0:1.0-r10"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := compareCollectorRPMEVR(tt.lower, tt.higher); got >= 0 {
+				t.Fatalf("compareCollectorRPMEVR(%q, %q) = %d, want < 0", tt.lower, tt.higher, got)
+			}
+			if got := compareCollectorRPMEVR(tt.higher, tt.lower); got <= 0 {
+				t.Fatalf("compareCollectorRPMEVR(%q, %q) = %d, want > 0", tt.higher, tt.lower, got)
+			}
+			items := []SoftwareItem{
+				{Category: "package", Name: "same", Version: tt.lower, Architecture: "amd64", Source: "rpm"},
+				{Category: "package", Name: "same", Version: tt.higher, Architecture: "amd64", Source: "rpm"},
+			}
+			got := deduplicateCollectorSoftware(items)
+			if len(got) != 1 || got[0].Version != tt.higher {
+				t.Fatalf("deduplicated items = %#v, want version %q", got, tt.higher)
+			}
+		})
+	}
+	for _, versions := range [][2]string{
+		{"0:1.01-01", "0:1.1-1"},
+		{"0:1.0+git2-1", "0:1.0_git2-1"},
+	} {
+		if got := compareCollectorRPMEVR(versions[0], versions[1]); got != 0 {
+			t.Fatalf("RPM semantic equality compare(%q, %q) = %d", versions[0], versions[1], got)
+		}
+	}
+
+	left := SoftwareItem{Version: "0:1.0+git2-1", Source: "rpm"}
+	right := SoftwareItem{Version: "0:1.0_git2-1", Source: "dpkg"}
+	if got, want := compareCollectorSoftwareVersions(left, right), compareCollectorPackageVersions(left.Version, right.Version); got != want || got == 0 {
+		t.Fatalf("mixed-source comparison = %d, want natural comparison %d", got, want)
+	}
+
+	equalItems := []SoftwareItem{
+		{Category: "package", Name: "same", Version: "0:1.01-01", Architecture: "amd64", Source: "rpm"},
+		{Category: "package", Name: "same", Version: "0:1.1-1", Architecture: "amd64", Source: "rpm"},
+	}
+	for i := 0; i < 2; i++ {
+		got := deduplicateCollectorSoftware(equalItems)
+		if len(got) != 1 || got[0].Version != "0:1.1-1" {
+			t.Fatalf("semantic-equality tie-break = %#v", got)
+		}
+		equalItems[0], equalItems[1] = equalItems[1], equalItems[0]
 	}
 }
 

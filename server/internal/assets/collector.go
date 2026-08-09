@@ -44,7 +44,7 @@ awk "{ print \"UPTIME_SECONDS=\" \$1 }" /proc/uptime
 printf "%s\n" AURORA_BASE_END
 '`
 	collectorDebianCommand   = `LC_ALL=C dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\t${db:Status-Status}\n'`
-	collectorRPMCommand      = `LC_ALL=C rpm -qa --qf '%{NAME}\t%{VERSION}-%{RELEASE}\t%{ARCH}\n'`
+	collectorRPMCommand      = `LC_ALL=C rpm -qa --qf '%{NAME}\t%{EPOCHNUM}:%{VERSION}-%{RELEASE}\t%{ARCH}\n'`
 	collectorAPKCommand      = `LC_ALL=C apk info -v`
 	collectorServicesCommand = `LC_ALL=C systemctl list-unit-files --type=service --no-legend --no-pager`
 	collectorVersionsCommand = `LC_ALL=C sh -c '
@@ -445,7 +445,13 @@ func parseCollectorPackages(commandID string, result CommandResult, defaultArch 
 		switch commandID {
 		case collectorCommandDebian:
 			fields := strings.Split(line, "\t")
-			if len(fields) != 4 || !validCollectorRawField(fields[0], 256) || !validCollectorRawField(fields[1], 512) || !validCollectorRawField(fields[2], 512) || !validCollectorRawField(fields[3], 512) {
+			if len(fields) != 4 || !validCollectorRawField(fields[0], 256) || !validCollectorRawField(fields[3], 512) {
+				malformed++
+				continue
+			}
+			var ok bool
+			name, ok = normalizeCollectorDebianName(fields[0])
+			if !ok {
 				malformed++
 				continue
 			}
@@ -457,21 +463,14 @@ func parseCollectorPackages(commandID string, result CommandResult, defaultArch 
 				malformed++
 				continue
 			}
-			name, version, arch, source = fields[0], fields[1], fields[2], "dpkg"
-			if base, suffix, ok := strings.Cut(name, ":"); ok {
-				if !validCollectorRawField(base, 256) || !validCollectorRawField(suffix, 512) || strings.Contains(suffix, ":") {
-					malformed++
-					continue
-				}
-				name = base
-			}
-			if !validCollectorRawField(name, 256) {
+			if !validCollectorRawField(fields[1], 512) || !validCollectorRawField(fields[2], 512) {
 				malformed++
 				continue
 			}
+			version, arch, source = fields[1], fields[2], "dpkg"
 		case collectorCommandRPM:
 			fields := strings.Split(line, "\t")
-			if len(fields) != 3 || !validCollectorRawField(fields[0], 256) || !validCollectorRawField(fields[1], 512) || !validCollectorRawField(fields[2], 512) {
+			if len(fields) != 3 || !validCollectorRawField(fields[0], 256) || !validCollectorRawField(fields[1], 512) || !validCollectorRawField(fields[2], 512) || !validCollectorRPMEVR(fields[1]) {
 				malformed++
 				continue
 			}
@@ -495,6 +494,21 @@ func parseCollectorPackages(commandID string, result CommandResult, defaultArch 
 		items = append(items, item)
 	}
 	return items, malformed
+}
+
+func normalizeCollectorDebianName(name string) (string, bool) {
+	if base, suffix, ok := strings.Cut(name, ":"); ok {
+		if !validCollectorRawField(base, 256) || !validCollectorRawField(suffix, 512) || strings.Contains(suffix, ":") {
+			return "", false
+		}
+		name = base
+	}
+	return name, validCollectorRawField(name, 256)
+}
+
+func validCollectorRPMEVR(evr string) bool {
+	_, _, _, ok := splitCollectorRPMEVR(evr)
+	return ok
 }
 
 func splitCollectorAPK(line string) (string, string) {
@@ -689,10 +703,119 @@ func deduplicateCollectorSoftware(items []SoftwareItem) []SoftwareItem {
 }
 
 func collectorSoftwareGreater(candidate, current SoftwareItem) bool {
-	if compared := compareCollectorPackageVersions(candidate.Version, current.Version); compared != 0 {
+	if compared := compareCollectorSoftwareVersions(candidate, current); compared != 0 {
 		return compared > 0
 	}
 	return collectorSoftwareLexical(candidate) > collectorSoftwareLexical(current)
+}
+
+func compareCollectorSoftwareVersions(left, right SoftwareItem) int {
+	if left.Source == "rpm" && right.Source == "rpm" {
+		return compareCollectorRPMEVR(left.Version, right.Version)
+	}
+	return compareCollectorPackageVersions(left.Version, right.Version)
+}
+
+// compareCollectorRPMEVR implements common rpmvercmp behavior for normalized
+// epoch:version-release values. It intentionally does not implement RPM's
+// special caret operator; caret is treated like another separator.
+func compareCollectorRPMEVR(left, right string) int {
+	leftEpoch, leftVersion, leftRelease, leftOK := splitCollectorRPMEVR(left)
+	rightEpoch, rightVersion, rightRelease, rightOK := splitCollectorRPMEVR(right)
+	if !leftOK || !rightOK {
+		return compareCollectorPackageVersions(left, right)
+	}
+	if compared := compareCollectorNumericRun(leftEpoch, rightEpoch); compared != 0 {
+		return compared
+	}
+	if compared := compareCollectorRPMPart(leftVersion, rightVersion); compared != 0 {
+		return compared
+	}
+	return compareCollectorRPMPart(leftRelease, rightRelease)
+}
+
+func splitCollectorRPMEVR(evr string) (epoch, version, release string, ok bool) {
+	epoch, versionRelease, hasEpoch := strings.Cut(evr, ":")
+	if !hasEpoch || epoch == "" || !collectorUnsignedDecimal(epoch) {
+		return "", "", "", false
+	}
+	version, release, hasRelease := strings.Cut(versionRelease, "-")
+	if !hasRelease || !validCollectorRawField(version, 512) || !validCollectorRawField(release, 512) {
+		return "", "", "", false
+	}
+	return epoch, version, release, true
+}
+
+func compareCollectorRPMPart(left, right string) int {
+	for leftIndex, rightIndex := 0, 0; ; {
+		leftTilde := leftIndex < len(left) && left[leftIndex] == '~'
+		rightTilde := rightIndex < len(right) && right[rightIndex] == '~'
+		if leftTilde || rightTilde {
+			switch {
+			case leftTilde && rightTilde:
+				leftIndex++
+				rightIndex++
+				continue
+			case leftTilde:
+				return -1
+			default:
+				return 1
+			}
+		}
+
+		for leftIndex < len(left) && !collectorASCIIAlphanumeric(left[leftIndex]) && left[leftIndex] != '~' {
+			leftIndex++
+		}
+		for rightIndex < len(right) && !collectorASCIIAlphanumeric(right[rightIndex]) && right[rightIndex] != '~' {
+			rightIndex++
+		}
+		if (leftIndex < len(left) && left[leftIndex] == '~') || (rightIndex < len(right) && right[rightIndex] == '~') {
+			continue
+		}
+		if leftIndex == len(left) || rightIndex == len(right) {
+			switch {
+			case leftIndex == len(left) && rightIndex == len(right):
+				return 0
+			case leftIndex == len(left):
+				return -1
+			default:
+				return 1
+			}
+		}
+
+		leftNumeric := collectorASCIIDigit(left[leftIndex])
+		rightNumeric := collectorASCIIDigit(right[rightIndex])
+		if leftNumeric != rightNumeric {
+			if leftNumeric {
+				return 1
+			}
+			return -1
+		}
+		leftEnd := collectorRPMRunEnd(left, leftIndex, leftNumeric)
+		rightEnd := collectorRPMRunEnd(right, rightIndex, rightNumeric)
+		var compared int
+		if leftNumeric {
+			compared = compareCollectorNumericRun(left[leftIndex:leftEnd], right[rightIndex:rightEnd])
+		} else {
+			compared = strings.Compare(left[leftIndex:leftEnd], right[rightIndex:rightEnd])
+		}
+		if compared != 0 {
+			return compared
+		}
+		leftIndex, rightIndex = leftEnd, rightEnd
+	}
+}
+
+func collectorRPMRunEnd(value string, start int, numeric bool) int {
+	end := start
+	for end < len(value) && collectorASCIIAlphanumeric(value[end]) && collectorASCIIDigit(value[end]) == numeric {
+		end++
+	}
+	return end
+}
+
+func collectorASCIIAlphanumeric(value byte) bool {
+	return collectorASCIIDigit(value) || (value >= 'A' && value <= 'Z') || (value >= 'a' && value <= 'z')
 }
 
 func compareCollectorPackageVersions(left, right string) int {

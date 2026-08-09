@@ -6,7 +6,7 @@
 
 `server/internal/assets` 为服务器资产盘点提供后端基础组件：SQLite 数据模型、加密凭据封装、主机密钥校验、受限 SSH 执行与上传，以及固定命令的软件和主机信息采集。模块保持免 Agent，目标 Linux 主机无需安装常驻进程。
 
-当前代码还没有资产 `Service`、HTTP API、RBAC 路由、前端页面或后台定时调度，也没有把 `config.Asset`、`CredentialCipher`、`Repository`、`SSHTransport` 和 `Collector` 装配到进程入口。类型和 Repository 方法不是可访问的线上接口，`AURORA_AIOPS_ASSET_COLLECT_INTERVAL` 目前也不会自动触发采集。这些能力由后续任务实现。
+当前代码还没有资产 `Service`、HTTP API、RBAC 路由、前端页面或后台定时调度，也没有把 `config.Config.Asset` 字段（类型为 `config.AssetConfig`）、`CredentialCipher`、`Repository`、`SSHTransport` 和 `Collector` 装配到进程入口。类型和 Repository 方法不是可访问的线上接口，`AURORA_AIOPS_ASSET_COLLECT_INTERVAL` 目前也不会自动触发采集。这些能力由后续任务实现。
 
 ## 架构与数据流
 
@@ -14,40 +14,39 @@
 AURORA_AIOPS_ASSET_* 环境变量
               |
               v
-       config.AssetConfig
-       |                         |
-       | 32-byte key             | collect interval
-       v                         v
-CredentialCipher          [future Scheduler]
-       ^                         |
-       | encrypt/decrypt         |
-       |                         v
-+------------------------------------------------------------+
-| Future Service / API / RBAC / UI boundary (not implemented) |
-+------------------------------------------------------------+
-       ^                         |
-       | server + envelope       | Collect
-       |                         v
-Repository <---------------> Collector
-   ^                             |
-   |                             | fixed command + limit
-   |                             v
-   |                        SSHTransport
-   |                             |
-   |                             | SHA256 host key + auth
-   |                             v
-   |                       target Linux host
-   |                             |
-   |                             | bounded CommandResult
-   |                             v
-   +--- Snapshot + []SoftwareItem+
-   |
-   +--> asset_credentials / asset_servers / project_installations
-   +--> asset_snapshots（成功快照）
-   +--> asset_software_items（该快照的软件明细）
+config.Config.Asset : config.AssetConfig
+       |                                     |
+       | 32-byte key                         | collect interval
+       v                                     v
+CredentialCipher                      [Future Scheduler]
+       |                                     |
+       +------------------+------------------+
+                          v
++-----------------------------------------------------------+
+| Future API / RBAC / UI -> Future Service (not implemented) |
++-----------------------------------------------------------+
+  |-- encrypt/decrypt ----------------------> CredentialCipher
+  |-- load server/envelope -----------------> Repository
+  |-- collect ------------------------------> Collector
+  |                                             |
+  |                                             | fixed command + limit
+  |                                             v
+  |                                         SSHTransport
+  |                                             |
+  |                                             | SHA256 host key + auth
+  |                                             v
+  |                                       target Linux host
+  |                                             |
+  |                                             | bounded CommandResult
+  |<-- Snapshot + []SoftwareItem ---------------+
+  '-- SaveCollection / MarkCollectionFailure -> Repository
+                                                   |
+                                                   +--> asset_credentials / asset_servers / project_installations
+                                                   +--> asset_snapshots（成功快照）
+                                                   +--> asset_software_items（该快照的软件明细）
 ```
 
-`Collector` 只依赖 `RemoteTransport`，测试可以用 fake transport，不必建立 SSH 连接。未来 Service 负责读取服务器与密文、解密凭据、执行主机密钥确认和采集，并把成功或失败结果交给 Repository。当前模块没有实现这段编排。
+图中的 `Repository` 与 `Collector` 是未来 Service 的两个独立依赖，当前没有直接调用关系。`Collector` 自身只依赖 `RemoteTransport`；生产实现可注入 `SSHTransport`，测试可注入 fake transport。未来 Service 负责从 Repository 读取服务器与密文、用 `CredentialCipher` 解密凭据、通过 SSH transport 确认主机密钥并调用 Collector 采集，再把成功结果交给 `SaveCollection`、把失败结果交给 `MarkCollectionFailure`。当前模块没有实现这段编排。
 
 ## 文件与模块职责
 
@@ -70,6 +69,12 @@ Repository <---------------> Collector
 | --- | --- | --- |
 | `AURORA_AIOPS_ASSET_ENCRYPTION_KEY` | 标准 Base64；解码后必须恰好为 32 字节。默认空。 | 非空但无法解码或长度不是 32 时，`config.Load` 返回错误。空值会得到空 `[]byte`，`config.Load` 仍成功。 |
 | `AURORA_AIOPS_ASSET_COLLECT_INTERVAL` | Go duration，默认 `15m`，必须大于 0。 | 无法解析、`0s` 或负值会使 `config.Load` 失败；当前没有 scheduler 消费该值。 |
+
+两项配置都通过 `getEnvCompat` 读取，精确优先级如下：
+
+1. 先读取对应的 `AURORA_AIOPS_*` 值并 `strings.TrimSpace`；trim 后非空就使用它。
+2. 当前变量为空或只有空白时，分别回退到 deprecated `KUBEJOJO_ASSET_ENCRYPTION_KEY` 或 `KUBEJOJO_ASSET_COLLECT_INTERVAL`，同样先 trim。使用 deprecated 变量时，日志只记录旧变量名和应迁移到的新变量名，不记录配置值。
+3. 新旧变量 trim 后都为空时，主密钥使用空值，采集间隔使用 fallback `15m`。
 
 配置层与未来业务层的边界必须分清：
 
@@ -102,7 +107,8 @@ Repository 在写入前复制 nonce/ciphertext，在 `GetCredential` 返回前�
 
 - Repository 的时间列统一先转 UTC，再使用固定宽度 `2006-01-02T15:04:05.000000000Z07:00` 写入。读取接受 `time.RFC3339Nano`；可空时间以空字符串表示。
 - 每次 `SaveCollection` 都插入一个新的成功快照和其软件明细，不更新既有成功快照。整个保存过程在一个事务内完成；软件主键冲突等错误会回滚快照与服务器摘要。
-- 最新快照、最新软件、摘要更新和保留都使用 `(collected_at DESC, id DESC)`。相同采集时间由较大的 `id` 决胜，不依赖插入顺序。
+- 快照选择、服务器摘要的权威快照判定和最新 30 条保留都使用 `(collected_at DESC, id DESC)`。相同采集时间由较大的 `id` 决胜，不依赖插入顺序；`ListLatestSoftware` 也用该顺序先选出所属快照。
+- 列表结果有各自独立的升序规则：`ListServers` 使用 `(created_at ASC, id ASC)`，`ListLatestSoftware` 使用 `(category ASC, name ASC, architecture ASC)`。不要把这些展示顺序与最新快照的降序规则混为一谈。
 - 迟到的旧快照仍作为历史成功结果保存，但只有排序后的权威最新快照能更新 `asset_servers` 摘要、`online` 状态、`last_seen_at` 和 `last_collected_at`。因此旧结果不能覆盖更新结果，也不能清除更新结果之后记录的失败状态。
 - 每台服务器只保留排序后的最新 30 个成功快照；删除旧快照会级联删除其软件明细。
 - `MarkCollectionFailure` 只更新 `status`、`status_message` 和 `updated_at`。最后一次成功的系统摘要、`last_collected_at`、快照和软件保持不变。
@@ -241,10 +247,12 @@ func (c *Collector) Collect(ctx context.Context, server Server, secret Credentia
 - source 可直接使用 `*bytes.Reader`、`*bytes.Buffer`、`*strings.Reader`。其他 source 必须实现 `io.ReadCloser`，以便 context 取消时关闭阻塞读取；普通的未知 `io.Reader` 会在读取前被拒绝。
 - 声明大小必须为 0 至 1 GiB，实际内容必须恰好等长。连续 100 次零字节读取会以 `io.ErrNoProgress` 失败。
 - destination 必须是已清理的绝对路径，只允许 `/tmp/aurora-aiops/` 或 `/opt/aurora-aiops/` 的词法子路径。路径不能含控制字符，mode 必须只有非零普通权限位。
-- 远端命令对选定 root、destination parent 直到 root 的每个词法组件逐项检查：目录必须存在、不是 symlink、UID 为 0，且 group/other 不可写。解析后的 root 必须等于词法 root，解析后的 parent 必须仍在 root 内，destination 本身也不能是 symlink。全部通过后才执行 `install -m`。
+- 远端命令对选定 root、destination parent 直到 root 的每个词法组件逐项检查：目录必须存在、不是 symlink、UID 为 0，且传统 POSIX mode bits 中 group/other 不可写。解析后的 root 必须等于词法 root，解析后的 parent 必须仍在 root 内。destination 本身只检查“不是 symlink”，不检查其 UID、mode 或 ACL。全部通过后才执行 `install -m`。
 - 远端 stderr 与 stdout 分离；失败诊断将控制字符替换为空格并限制到 4 KiB，再包装到错误中。它只做字符与大小清理，不应被误解为完整的秘密识别器。
 
-上传把已预配的 trusted root 当作控制面信任边界：能写 root 或其中任一目录组件的非特权用户不能替换已检查路径；root 已被攻陷不在该模型内。因此这两个根目录必须由管理员预先创建并保持 root 所有、不可被 group/other 写入。当前没有浏览器 SSH、任意命令 API 或用户脚本路由。
+上传把已预配的 trusted root 当作控制面信任边界。它只防范**不能写 trusted root 或任一路径组件**的非特权攻击者替换这些组件；能写任一组件的攻击者仍可替换路径，已有 destination 文件本身可被攻击者写入时也不在保证内。guard 只检查 symlink、UID 和传统 group/other mode bits，不检查 POSIX ACL，因此 ACL 额外授予的写权限可能绕过这一威胁假设。
+
+远端命令直接以 SSH 认证身份运行，代码不调用 `sudo`，也不实现任何提权。由于 trusted root 必须是 UID 0 所有且不可被 group/other 写入，成功上传通常要求 SSH 身份本身拥有 root 或等效写权限。这两个根目录必须由管理员预先创建并维护相同的信任条件。当前没有浏览器 SSH、任意命令 API 或用户脚本路由。
 
 ## Collector 参考
 
@@ -275,8 +283,9 @@ func (c *Collector) Collect(ctx context.Context, server Server, secret Credentia
 
 ### 数据安全、去重和取消
 
-- 原始记录必须是有效 UTF-8、非空、无 control / format / line-separator / paragraph-separator 字符。名称上限 256 字节，version、architecture、status 等上限 512 字节。
-- 需要清理的字段将非法字符替换为空格，按 UTF-8 字节边界截断，再去掉两端空白。警告不包含远端 stderr、地址或凭据。
+- 可选软件 parser 对原始字段执行严格拒绝：字段必须是有效 UTF-8、非空、无 control / format / line-separator / paragraph-separator 字符，而且不能超过字段上限。名称通常为 256 字节，version、architecture、status 等通常为 512 字节；不合格的记录计为 malformed，不进入结果。
+- base 协议采用不同策略。OS ID/version、architecture、hostname 和 kernel 文本值先经 `sanitizeCollectorField`：无效 UTF-8 和上述控制/格式字符替换为空格，按 UTF-8 字节边界截断，再去掉两端空白；随后检查这些必需文本非空。CPU、内存、磁盘、load 和 uptime 不走文本 sanitizer，而是 trim 后严格解析，并检查正数、溢出、NaN/Inf、负值等数值边界。协议 marker、key、重复项和尾随输出仍需严格匹配。
+- `collector_warning` 的 status 也用 sanitizer 限制到 512 字节。warning 不包含远端 stderr、地址或凭据。
 - 返回前按数据库身份 `(category, name, architecture)` 去重。并行安装版本无法进入当前 schema，所以保留语义上最大的版本；语义相等时使用完整字段的词法顺序确定唯一 winner，结果本身也稳定排序。
 - context 在 base 前、每个可选命令前后都会检查。取消会停止后续序列，并丢弃已经形成的部分 `Snapshot` 和 `SoftwareItem`。
 
@@ -287,7 +296,7 @@ func (c *Collector) Collect(ctx context.Context, server Server, secret Credentia
 1. 先写一个会失败的测试，覆盖新 ID、固定命令、输出上限、合法记录、畸形记录、截断和取消。运行目标测试并确认 RED 来自缺少的新行为，而不是测试夹具错误。
 2. 在 `collector.go` 增加稳定 command ID 和 `collectorCommands` 条目。命令必须完全静态并设置 `LC_ALL=C`；不得拼接服务器字段、凭据、API 参数或其他运行时输入。
 3. 明确它是 required 还是 optional。required 失败必须让采集整体失败且不泄漏远端细节；optional 失败必须转成有界 `collector_warning`。
-4. parser 只接受明确的机器可读格式。先用 `validCollectorRawField` 验证，再归一化；不完整的截断尾记录不能入库。
+4. parser 只接受明确的机器可读格式。可选软件字段先用 `validCollectorRawField` 严格验证再归一化；base 文本字段沿用“sanitize 后检查必需非空”，base 数值字段沿用严格数值解析。不要把两种策略合并。不完整的截断尾记录不能入库。
 5. 在产生 `SoftwareItem` 前确认数据库身份兼容性。当前主键不包含 version 或 source；如新来源可能产生同一 `(category, name, architecture)` 的多行，要么实现确定性的 winner，要么先迁移 schema，不能依赖插入顺序。
 6. 保持既有 category/name 身份稳定。改变身份会让同一软件在历史快照中表现为删除后新增，影响后续差异计算。
 7. 实现后运行格式化、目标测试和三个相关 package 的完整验证：

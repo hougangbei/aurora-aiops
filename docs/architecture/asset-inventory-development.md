@@ -54,6 +54,7 @@ CredentialCipher                      [Future Scheduler]
 | --- | --- |
 | `server/internal/config/config.go` | 解析资产主密钥和采集间隔，暴露 `AssetConfig`。 |
 | `server/internal/config/legacy_compat.go` | 为配置读取提供兼容层；当前资产配置使用同一读取规则。 |
+| `server/internal/store/sqlite.go` | 打开 SQLite，限制为单连接，启用 `PRAGMA foreign_keys=ON` 和 5 秒 busy timeout，再执行 migration。 |
 | `server/internal/store/migrate.go` | 在一个事务中创建五张资产相关表和快照索引。 |
 | `server/internal/assets/model.go` | 定义服务器、凭据、快照、软件和输入模型。 |
 | `server/internal/assets/errors.go` | 定义供后续 Service 和路由映射使用的 sentinel error；其中部分错误当前尚未被调用。 |
@@ -96,6 +97,8 @@ CredentialCipher                      [Future Scheduler]
 | `project_installations` | 引用服务器并 `ON DELETE CASCADE`；`(server_id, project_id)` 唯一。当前只有 schema，没有资产 Repository 方法或部署业务。 |
 
 删除服务器会级联删除快照、软件和安装记录。Repository 随后仅在没有其他服务器引用时删除凭据。凭据外键本身没有 `ON DELETE CASCADE`，因此被引用的凭据不能先删除。
+
+这些级联和“被引用凭据不能删除”的契约依赖 SQLite 对当前连接启用 foreign-key enforcement。`store.Open` 先把连接池限制为一个连接，再执行 `PRAGMA foreign_keys=ON`，因此 Repository 的正常装配满足该前置条件。`NewRepository` 只接收并保存任意 `*sql.DB`，不会自行启用或验证该 PRAGMA；如果调用方绕过 `store.Open`，就必须用等价方式保证每个可能使用的 SQLite 连接都启用 `foreign_keys`。否则 `ON DELETE CASCADE` 不保证执行，删除仍被引用的凭据也不保证被 SQLite 阻止。
 
 ### 公开读取与凭据隔离
 

@@ -241,8 +241,8 @@ func (t *SSHTransport) Upload(ctx context.Context, target RemoteTarget, secret C
 	}
 
 	var transferErr error
-	if _, err := io.CopyN(stdin, source, size); err != nil {
-		transferErr = fmt.Errorf("upload source shorter than declared size %d: %w", size, err)
+	if err := copyUploadExact(ctx, stdin, source, size); err != nil {
+		transferErr = err
 	} else {
 		transferErr = verifyUploadSourceEOF(ctx, source, size)
 	}
@@ -253,6 +253,58 @@ func (t *SSHTransport) Upload(ctx context.Context, target RemoteTarget, secret C
 	}
 	if transferErr != nil || closeErr != nil || waitErr != nil {
 		return errors.Join(transferErr, closeErr, waitErr)
+	}
+	return nil
+}
+
+func copyUploadExact(ctx context.Context, destination io.Writer, source io.Reader, declaredSize int64) error {
+	const bufferSize = 32 << 10
+	var buffer [bufferSize]byte
+	remaining := declaredSize
+	emptyReads := 0
+	for remaining > 0 {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		readSize := len(buffer)
+		if remaining < int64(readSize) {
+			readSize = int(remaining)
+		}
+		n, readErr := source.Read(buffer[:readSize])
+		if n < 0 || n > readSize {
+			return fmt.Errorf("upload source returned invalid read count %d: %w", n, ErrInvalidInput)
+		}
+		if n > 0 {
+			emptyReads = 0
+			written, writeErr := destination.Write(buffer[:n])
+			if written < 0 || written > n {
+				return fmt.Errorf("SSH upload stdin returned invalid write count %d: %w", written, io.ErrShortWrite)
+			}
+			remaining -= int64(written)
+			if writeErr != nil {
+				return fmt.Errorf("write SSH upload stdin: %w", writeErr)
+			}
+			if written != n {
+				return fmt.Errorf("write SSH upload stdin: %w", io.ErrShortWrite)
+			}
+			if remaining == 0 {
+				return nil
+			}
+		} else {
+			emptyReads++
+		}
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				return fmt.Errorf("upload source shorter than declared size %d: %w", declaredSize, io.ErrUnexpectedEOF)
+			}
+			return fmt.Errorf("read upload source: %w", readErr)
+		}
+		if emptyReads >= maxSSHEmptyReads {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
+			return fmt.Errorf("read upload source after %d empty reads: %w", maxSSHEmptyReads, io.ErrNoProgress)
+		}
 	}
 	return nil
 }

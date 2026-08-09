@@ -71,6 +71,40 @@ func (noProgressReader) Read([]byte) (int, error) {
 	return 0, nil
 }
 
+type partialThenStallReader struct {
+	reader      *bytes.Reader
+	stalled     chan struct{}
+	release     chan struct{}
+	stalledOnce sync.Once
+	releaseOnce sync.Once
+}
+
+func newPartialThenStallReader(payload []byte) *partialThenStallReader {
+	return &partialThenStallReader{
+		reader:  bytes.NewReader(payload),
+		stalled: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+}
+
+func (r *partialThenStallReader) Read(p []byte) (int, error) {
+	if r.reader.Len() > 0 {
+		return r.reader.Read(p)
+	}
+	r.stalledOnce.Do(func() { close(r.stalled) })
+	select {
+	case <-r.release:
+		return 0, io.EOF
+	default:
+		runtime.Gosched()
+		return 0, nil
+	}
+}
+
+func (r *partialThenStallReader) stopStalling() {
+	r.releaseOnce.Do(func() { close(r.release) })
+}
+
 func newLoopbackSSHServer(t *testing.T) *loopbackSSHServer {
 	t.Helper()
 	_, hostKey, err := ed25519.GenerateKey(rand.Reader)
@@ -544,6 +578,26 @@ func TestSSHTransportUploadToleratesTransientZeroReadAtEOF(t *testing.T) {
 	}
 }
 
+func TestSSHTransportUploadToleratesTransientZeroReadsWhileCopying(t *testing.T) {
+	server := newLoopbackSSHServer(t)
+	payload := []byte("partial-rest")
+	reader := io.MultiReader(
+		strings.NewReader("partial"),
+		&transientZeroEOFReader{reader: bytes.NewReader(nil), zeroReadsLeft: 2},
+		strings.NewReader("-rest"),
+	)
+	err := NewSSHTransport(time.Second).Upload(
+		context.Background(), server.target(server.fingerprint()),
+		CredentialSecret{Password: testSSHPassword}, reader, int64(len(payload)), "/tmp/aurora-aiops/transient-copy", 0o600,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := server.lastUpload(t); !bytes.Equal(got, payload) {
+		t.Fatalf("uploaded bytes = %q, want %q", got, payload)
+	}
+}
+
 func TestSSHTransportUploadRejectsReaderWithNoProgress(t *testing.T) {
 	server := newLoopbackSSHServer(t)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -571,6 +625,62 @@ func TestSSHTransportUploadHonorsCancellationWhileProbingEOF(t *testing.T) {
 	)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context canceled", err)
+	}
+}
+
+func TestSSHTransportUploadBoundsNoProgressWhileCopyingPositiveSize(t *testing.T) {
+	server := newLoopbackSSHServer(t)
+	reader := newPartialThenStallReader([]byte("partial"))
+	defer reader.stopStalling()
+	done := make(chan error, 1)
+	go func() {
+		done <- NewSSHTransport(time.Second).Upload(
+			context.Background(), server.target(server.fingerprint()),
+			CredentialSecret{Password: testSSHPassword}, reader, int64(len("partial")+1), "/tmp/aurora-aiops/stalled", 0o600,
+		)
+	}()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, io.ErrNoProgress) {
+			t.Fatalf("error = %v, want io.ErrNoProgress", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		reader.stopStalling()
+		<-done
+		t.Fatal("positive-size upload did not bound a stalled reader")
+	}
+}
+
+func TestSSHTransportUploadCancelsNoProgressWhileCopyingPositiveSize(t *testing.T) {
+	server := newLoopbackSSHServer(t)
+	reader := newPartialThenStallReader([]byte("partial"))
+	defer reader.stopStalling()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- NewSSHTransport(time.Second).Upload(
+			ctx, server.target(server.fingerprint()),
+			CredentialSecret{Password: testSSHPassword}, reader, int64(len("partial")+1), "/opt/aurora-aiops/canceled-stall", 0o640,
+		)
+	}()
+	select {
+	case <-reader.stalled:
+	case <-time.After(time.Second):
+		reader.stopStalling()
+		<-done
+		t.Fatal("reader did not enter stalled state")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("error = %v, want context canceled", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		reader.stopStalling()
+		<-done
+		t.Fatal("positive-size stalled upload did not honor cancellation promptly")
 	}
 }
 
@@ -616,8 +726,12 @@ func TestSSHTransportUploadRejectsLengthMismatchAndCommandFailure(t *testing.T) 
 		"overlong": strings.NewReader("12345"),
 	} {
 		t.Run(name, func(t *testing.T) {
-			if err := transport.Upload(context.Background(), target, secret, reader, 4, path, 0o640); err == nil {
+			err := transport.Upload(context.Background(), target, secret, reader, 4, path, 0o640)
+			if err == nil {
 				t.Fatal("expected length mismatch")
+			}
+			if name == "short" && !errors.Is(err, io.ErrUnexpectedEOF) {
+				t.Fatalf("error = %v, want io.ErrUnexpectedEOF", err)
 			}
 		})
 	}

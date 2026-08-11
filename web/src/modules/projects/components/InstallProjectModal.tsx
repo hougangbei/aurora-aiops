@@ -13,6 +13,7 @@ type Props = {
   servers: AssetServer[];
   canInstall: boolean;
   disabledReason?: string;
+  onTaskCreated?: (taskId: string) => void;
   onClose: () => void;
 };
 
@@ -33,7 +34,7 @@ function serverReason(project: Project, server: AssetServer): string | null {
   return null;
 }
 
-export function InstallProjectModal({ open, project, servers, canInstall, disabledReason, onClose }: Props) {
+export function InstallProjectModal({ open, project, servers, canInstall, disabledReason, onTaskCreated, onClose }: Props) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const [form] = Form.useForm<FormValues>();
@@ -57,7 +58,8 @@ export function InstallProjectModal({ open, project, servers, canInstall, disabl
     mutationFn: (input: InstallProjectInput) => installProject(project.id, input),
     onSuccess: (task) => {
       setTaskId(task.id);
-      setShowProgress(true);
+      if (onTaskCreated) onTaskCreated(task.id);
+      else setShowProgress(true);
       setErrorMessage(undefined);
       message.success('安装任务已提交');
       void queryClient.invalidateQueries({ queryKey: ['projects'] });

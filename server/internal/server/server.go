@@ -16,6 +16,7 @@ import (
 	"github.com/hougangbei/aurora-aiops/server/internal/cluster"
 	"github.com/hougangbei/aurora-aiops/server/internal/config"
 	"github.com/hougangbei/aurora-aiops/server/internal/deployment"
+	deploymentcatalog "github.com/hougangbei/aurora-aiops/server/internal/deployment/catalog"
 	"github.com/hougangbei/aurora-aiops/server/internal/evidence"
 	"github.com/hougangbei/aurora-aiops/server/internal/experiment"
 	"github.com/hougangbei/aurora-aiops/server/internal/kube"
@@ -105,6 +106,13 @@ func Run(info buildinfo.Info) error {
 	deploymentEvents := deployment.NewEventStore(db)
 	deploymentRepo.SetEventNotifier(deploymentEvents.Wake)
 	deploymentCatalog := &deployment.Catalog{}
+	releaseResolver, err := deployment.NewGitHubReleaseResolver(cfg.Update.Repository, cfg.Update.GitHubToken, nil)
+	if err != nil {
+		return fmt.Errorf("initialize Aurora release resolver: %w", err)
+	}
+	if err := deploymentCatalog.Register(deploymentcatalog.NewAuroraInstaller(releaseResolver)); err != nil {
+		return fmt.Errorf("register Aurora installer: %w", err)
+	}
 	deploymentService := deployment.NewService(deploymentRepo, deploymentCatalog, deploymentCipher, assetService.Get, auditRepo, deploymentEvents, time.Now)
 	workerCipher := deploymentCipher
 	if workerCipher == nil {

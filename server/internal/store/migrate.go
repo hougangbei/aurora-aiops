@@ -326,5 +326,98 @@ CREATE TABLE IF NOT EXISTS project_installations (
 		return err
 	}
 
+	_, err = tx.Exec(`
+CREATE TABLE IF NOT EXISTS deployment_tasks (
+  id TEXT PRIMARY KEY,
+  server_id TEXT NOT NULL REFERENCES asset_servers(id) ON DELETE CASCADE,
+  project_id TEXT NOT NULL,
+  version TEXT NOT NULL,
+  action TEXT NOT NULL CHECK (action IN ('install','adopt')),
+  status TEXT NOT NULL CHECK (status IN ('queued','running','succeeded','failed','cancelled')),
+  actor TEXT NOT NULL,
+  retry_of TEXT,
+  current_step_id TEXT NOT NULL DEFAULT '',
+  current_step_label TEXT NOT NULL DEFAULT '',
+  percent INTEGER NOT NULL DEFAULT 0 CHECK (percent BETWEEN 0 AND 100),
+  cancel_requested INTEGER NOT NULL DEFAULT 0,
+  error_code TEXT NOT NULL DEFAULT '',
+  error_message TEXT NOT NULL DEFAULT '',
+  config_nonce BLOB NOT NULL,
+  config_ciphertext BLOB NOT NULL,
+  config_key_version INTEGER NOT NULL DEFAULT 1,
+  lease_owner TEXT NOT NULL DEFAULT '',
+  lease_expires_at TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  started_at TEXT NOT NULL DEFAULT '',
+  finished_at TEXT NOT NULL DEFAULT '',
+  FOREIGN KEY(retry_of) REFERENCES deployment_tasks(id)
+)`)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`
+CREATE UNIQUE INDEX IF NOT EXISTS idx_deployment_tasks_one_active_server
+ON deployment_tasks(server_id) WHERE status IN ('queued','running')`)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`
+CREATE INDEX IF NOT EXISTS idx_deployment_tasks_status_created
+ON deployment_tasks(status, created_at)`)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`
+CREATE TABLE IF NOT EXISTS deployment_steps (
+  task_id TEXT NOT NULL REFERENCES deployment_tasks(id) ON DELETE CASCADE,
+  step_id TEXT NOT NULL,
+  label TEXT NOT NULL,
+  ordinal INTEGER NOT NULL,
+  percent INTEGER NOT NULL CHECK (percent BETWEEN 1 AND 100),
+  status TEXT NOT NULL CHECK (status IN ('pending','running','succeeded','failed','skipped','cancelled')),
+  started_at TEXT NOT NULL DEFAULT '',
+  finished_at TEXT NOT NULL DEFAULT '',
+  error_message TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY(task_id, step_id),
+  UNIQUE(task_id, ordinal)
+)`)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`
+CREATE TABLE IF NOT EXISTS deployment_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL REFERENCES deployment_tasks(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  created_at TEXT NOT NULL
+)`)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`
+CREATE INDEX IF NOT EXISTS idx_deployment_events_task_id
+ON deployment_events(task_id, id)`)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(`
+CREATE TABLE IF NOT EXISTS deployment_task_values (
+  task_id TEXT NOT NULL REFERENCES deployment_tasks(id) ON DELETE CASCADE,
+  value_key TEXT NOT NULL,
+  value_text TEXT NOT NULL,
+  PRIMARY KEY(task_id, value_key)
+)`)
+	if err != nil {
+		return err
+	}
+
 	return tx.Commit()
 }

@@ -107,7 +107,7 @@ func TestGitHubReleaseRejectsMissingDuplicateOversizedAndBadChecksums(t *testing
 					_, _ = io.WriteString(w, "x")
 					return
 				}
-				_ = json.NewEncoder(w).Encode(map[string]any{"assets": tc.assets})
+				_ = json.NewEncoder(w).Encode(map[string]any{"tag_name": "v0.1.2", "assets": tc.assets})
 			}))
 			defer server.Close()
 			for _, asset := range tc.assets {
@@ -141,7 +141,7 @@ func TestGitHubReleaseRejectsDuplicateChecksumAndOversizedChecksum(t *testing.T)
 					_, _ = io.WriteString(w, checksum)
 					return
 				}
-				_ = json.NewEncoder(w).Encode(map[string]any{"assets": []map[string]any{
+				_ = json.NewEncoder(w).Encode(map[string]any{"tag_name": "v0.1.2", "assets": []map[string]any{
 					{"name": "aurora-aiops_0.1.2_linux_amd64.tar.gz", "browser_download_url": serverURL + "/archive", "size": 1},
 					{"name": "checksums.txt", "browser_download_url": serverURL + "/checksums"},
 				}})
@@ -176,7 +176,7 @@ func TestGitHubReleaseRejectsUntrustedRedirect(t *testing.T) {
 	}))
 	defer redirect.Close()
 	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"assets": []map[string]any{
+		_ = json.NewEncoder(w).Encode(map[string]any{"tag_name": "v0.1.2", "assets": []map[string]any{
 			{"name": "aurora-aiops_0.1.2_linux_amd64.tar.gz", "browser_download_url": redirect.URL, "size": 7},
 			{"name": "checksums.txt", "browser_download_url": redirect.URL + "/checksums"},
 		}})

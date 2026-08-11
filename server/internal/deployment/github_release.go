@@ -93,7 +93,7 @@ func (r *GitHubReleaseResolver) Resolve(ctx context.Context, version, architectu
 	if err := r.getJSON(ctx, endpoint, &release); err != nil {
 		return ReleaseArtifact{}, err
 	}
-	if release.TagName != "" && release.TagName != "v"+version {
+	if release.TagName != "v"+version {
 		return ReleaseArtifact{}, fmt.Errorf("release tag does not match requested version")
 	}
 

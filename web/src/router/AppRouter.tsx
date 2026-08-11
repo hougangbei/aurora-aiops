@@ -39,6 +39,8 @@ import { AIOpsOverviewPage } from '../pages/AIOpsOverviewPage';
 import { AIOpsSettingsPage } from '../pages/AIOpsSettingsPage';
 import { AssetServerDetailsPage } from '../pages/AssetServerDetailsPage';
 import { AssetServersPage } from '../pages/AssetServersPage';
+import { AssetProjectsPage } from '../pages/AssetProjectsPage';
+import { AssetProjectDetailsPage } from '../pages/AssetProjectDetailsPage';
 import { EvidenceGraphPage } from '../pages/EvidenceGraphPage';
 import { IncidentDetailsPage } from '../pages/IncidentDetailsPage';
 import { IncidentsPage } from '../pages/IncidentsPage';
@@ -181,6 +183,8 @@ function ProtectedRoutes() {
         <Route path="/topology" element={<TopologyPage />} />
         <Route path="/assets/servers" element={<AssetServersPage />} />
         <Route path="/assets/servers/:id" element={<AssetServerDetailsPage />} />
+        <Route path="/assets/projects" element={<AssetProjectsPage />} />
+        <Route path="/assets/projects/:projectId" element={<AssetProjectDetailsPage />} />
         <Route path="/aiops/overview" element={<AIOpsOverviewPage />} />
         <Route path="/aiops/incidents" element={<IncidentsPage />} />
         <Route path="/aiops/incidents/:id/evidence" element={<EvidenceGraphPage />} />

@@ -7,6 +7,8 @@ export type AssetServer = {
   address: string;
   username: string;
   hostKeyFingerprint?: string;
+  /** Whether the currently presented SSH host key has been explicitly trusted. */
+  hostKeyConfirmed?: boolean;
   sshPort: number;
   status: AssetServerStatus;
   statusMessage?: string;

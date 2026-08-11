@@ -42,6 +42,13 @@ export const navigationSections: NavigationSection[] = [
         description: '服务器资产登记、连接状态与采集信息查看',
         implemented: true,
       },
+      {
+        key: 'assets-projects',
+        label: '项目中心',
+        path: '/assets/projects',
+        description: '项目版本浏览、安装目标选择与部署任务入口',
+        implemented: true,
+      },
     ],
   },
   {

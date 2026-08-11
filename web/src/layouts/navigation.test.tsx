@@ -7,8 +7,13 @@ describe('aiops navigation', () => {
     const section = navigationSections.find((s) => s.label === '资产管理');
     expect(section?.items).toEqual([
       expect.objectContaining({ label: '服务器', path: '/assets/servers', implemented: true }),
+      expect.objectContaining({ label: '项目中心', path: '/assets/projects', implemented: true }),
     ]);
     expect(navigationItems.find((item) => item.path === '/assets/servers')?.sectionLabel).toBe('资产管理');
+  });
+
+  it('registers project center routes under asset management', () => {
+    expect(navigationItems.find((item) => item.path === '/assets/projects')?.implemented).toBe(true);
   });
 
   it('registers the 智能运维 section', () => {

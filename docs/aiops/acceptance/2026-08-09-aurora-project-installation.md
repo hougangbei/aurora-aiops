@@ -1,6 +1,6 @@
 # Aurora AIOps 项目安装 Phase-3 验收记录
 
-**验收日期：** 2026-08-11  
+**验收日期：** 2026-08-11
 **范围：** Linux release asset contract、GitHub 精确版本 resolver、Aurora 固定项目目录/九步安装计划、持久化任务与前端项目中心的自动化验收。本文只记录实际执行的本地证据；不把 fake target、loopback 或占位适配器推断为真实主机安装。
 
 ## 结论与限制

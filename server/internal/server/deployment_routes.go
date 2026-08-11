@@ -138,6 +138,8 @@ func respondDeploymentError(c *gin.Context, err error) {
 		code, status, message = "DEPLOYMENT_ACTIVE_TASK", http.StatusConflict, "server already has an active deployment"
 	case errors.Is(err, deployment.ErrUnsupportedTarget):
 		code, status, message = "DEPLOYMENT_UNSUPPORTED_TARGET", http.StatusUnprocessableEntity, "target does not support this project"
+	case errors.Is(err, deployment.ErrAdoptionRequired):
+		code, status, message = "KUBERNETES_ADOPTION_REQUIRED", http.StatusConflict, "an existing Kubernetes cluster requires read-only adoption"
 	case errors.Is(err, deployment.ErrInvalidInput):
 		code, status, message = "INVALID_ARGUMENT", http.StatusBadRequest, "invalid deployment request"
 	case errors.Is(err, deployment.ErrInvalidTransition), errors.Is(err, deployment.ErrNotRetryable):

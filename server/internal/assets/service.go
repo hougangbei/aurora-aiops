@@ -178,6 +178,35 @@ func (s *Service) Get(ctx context.Context, id string) (Server, error) {
 	return s.repo.GetServer(ctx, id)
 }
 
+// DeploymentTarget resolves the private SSH material needed by the durable
+// deployment worker. The returned secret is intentionally kept out of API
+// DTOs and callers must clear it when the execution context is discarded.
+func (s *Service) DeploymentTarget(ctx context.Context, id string) (Server, RemoteTarget, CredentialSecret, error) {
+	if s == nil || s.repo == nil || s.cipher == nil || s.remote == nil {
+		return Server{}, RemoteTarget{}, CredentialSecret{}, ErrEncryptionUnavailable
+	}
+	server, err := s.repo.GetServer(ctx, id)
+	if err != nil {
+		return Server{}, RemoteTarget{}, CredentialSecret{}, err
+	}
+	if server.Status != ServerOnline || server.HostKeyFingerprint == "" || server.CredentialID == "" {
+		return Server{}, RemoteTarget{}, CredentialSecret{}, fmt.Errorf("deployment target is not confirmed")
+	}
+	credential, err := s.repo.GetCredential(ctx, server.CredentialID)
+	if err != nil {
+		return Server{}, RemoteTarget{}, CredentialSecret{}, err
+	}
+	secret, err := s.cipher.Decrypt(credential.Envelope)
+	if err != nil {
+		return Server{}, RemoteTarget{}, CredentialSecret{}, ErrEncryptionUnavailable
+	}
+	port := server.SSHPort
+	if port == 0 {
+		port = 22
+	}
+	return server, RemoteTarget{Address: server.Address, Port: port, Username: server.Username, ExpectedFingerprint: server.HostKeyFingerprint}, secret, nil
+}
+
 func (s *Service) TestConnection(ctx context.Context, actor, id string) (ConnectionResult, error) {
 	server, err := s.repo.GetServer(ctx, id)
 	if err != nil {

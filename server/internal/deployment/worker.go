@@ -110,6 +110,9 @@ func (w *Worker) executeClaimed(ctx context.Context, task Task) error {
 	if err != nil {
 		return w.failTask(ctx, task, "TARGET_UNAVAILABLE", safeMessage(logger, err))
 	}
+	if cleaner, ok := execCtx.(interface{ Clear() }); ok {
+		defer cleaner.Clear()
+	}
 	// Keep installer output redacted even when a provider forwards Log calls to
 	// an audit sink. Credentials never cross this wrapper in plaintext.
 	execCtx = &redactingExecutionContext{ExecutionContext: execCtx, logger: logger}

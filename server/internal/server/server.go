@@ -121,7 +121,7 @@ func Run(info buildinfo.Info) error {
 	if workerCipher == nil {
 		workerCipher = unavailableDeploymentCipher{}
 	}
-	deploymentWorker := deployment.NewWorker(deploymentRepo, deploymentCatalog, workerCipher, unavailableDeploymentTargetProvider{}, deployment.WorkerOptions{Owner: "aurora-deployment-worker"})
+	deploymentWorker := deployment.NewWorker(deploymentRepo, deploymentCatalog, workerCipher, assetDeploymentTargetProvider{assets: assetService, remote: assetRemote}, deployment.WorkerOptions{Owner: "aurora-deployment-worker"})
 	snapshotStore := remediation.NewSnapshotStore(db)
 	executor := remediation.NewExecutor(
 		&remediation.KubeExecutorClient{Client: sharedClient.Kubernetes, RolloutTimeout: cfg.Cluster.Timeout},

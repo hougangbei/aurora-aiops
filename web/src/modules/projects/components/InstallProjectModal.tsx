@@ -44,13 +44,18 @@ export function InstallProjectModal({ open, project, servers, canInstall, disabl
   const recommendedVersion = project.recommendedVersion || project.versions[project.versions.length - 1] || '';
   const serverOptions = useMemo(() => servers.map((server) => ({ server, reason: serverReason(project, server) })), [project, servers]);
   const firstCompatible = serverOptions.find((item) => !item.reason)?.server.id;
+  const selectedServerId = Form.useWatch('serverId', form);
+  const selectedServer = servers.find((server) => server.id === selectedServerId);
 
   useEffect(() => {
     if (!open) {
       form.resetFields();
       setErrorMessage(undefined);
-    } else if (!form.getFieldValue('version')) {
-      form.setFieldsValue({ version: recommendedVersion, serverId: firstCompatible });
+    } else {
+      const fields: FormValues = {};
+      if (!form.getFieldValue('version')) fields.version = recommendedVersion;
+      if (!form.getFieldValue('serverId') && firstCompatible) fields.serverId = firstCompatible;
+      if (Object.keys(fields).length > 0) form.setFieldsValue(fields);
     }
   }, [open, form, firstCompatible, recommendedVersion]);
 
@@ -114,7 +119,7 @@ export function InstallProjectModal({ open, project, servers, canInstall, disabl
           <Checkbox aria-label="我确认在目标服务器安装 Aurora AIOps">我确认在目标服务器安装 Aurora AIOps</Checkbox>
         </Form.Item>
       </Form>
-      <Typography.Paragraph type="secondary" className="!mb-0">安装摘要：{project.name} {recommendedVersion} → {firstCompatible ? servers.find((server) => server.id === firstCompatible)?.name : '未选择服务器'}</Typography.Paragraph>
+      <Typography.Paragraph type="secondary" className="!mb-0">安装摘要：{project.name} {form.getFieldValue('version') || recommendedVersion} → {selectedServer?.name || '未选择服务器'}</Typography.Paragraph>
     </Modal>
     <TaskProgressDrawer taskId={taskId} open={showProgress} canManage={canInstall} onClose={() => setShowProgress(false)} />
   </>;

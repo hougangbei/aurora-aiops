@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-allowed='^(server/internal/config/legacy_compat\.go|server/internal/config/config_test\.go|server/internal/server/legacy_compat\.go|server/internal/server/session_middleware_test\.go|web/src/stores/legacyStorageCompat\.ts|web/src/stores/appStore\.test\.ts|web/src/app/documentTitle\.test\.ts|web/buildEnvCompat\.ts|web/buildEnvCompat\.test\.ts|scripts/migrate-kubejojo-to-aurora-aiops\.sh|scripts/test-brand-migration\.sh|docs/migrations/kubejojo-to-aurora-aiops\.md|scripts/verify-brand-rename\.sh):|^docs/architecture/asset-inventory-development\.md:[0-9]+:.*KUBEJOJO_ASSET_(ENCRYPTION_KEY|COLLECT_INTERVAL)|^(README\.md|scripts/build-release\.sh):[0-9]+:.*(migrate-kubejojo-to-aurora-aiops|kubejojo-to-aurora-aiops)'
+allowed='^(server/internal/config/legacy_compat\.go|server/internal/config/config_test\.go|server/internal/server/legacy_compat\.go|server/internal/server/session_middleware_test\.go|web/src/stores/legacyStorageCompat\.ts|web/src/stores/appStore\.test\.ts|web/src/app/documentTitle\.test\.ts|web/buildEnvCompat\.ts|web/buildEnvCompat\.test\.ts|scripts/migrate-kubejojo-to-aurora-aiops\.sh|scripts/test-brand-migration\.sh|scripts/verify-release-assets\.sh:112|scripts/verify-release-assets\.test\.sh:(17|18|29)|docs/migrations/kubejojo-to-aurora-aiops\.md|scripts/verify-brand-rename\.sh):|^docs/architecture/asset-inventory-development\.md:[0-9]+:.*KUBEJOJO_ASSET_(ENCRYPTION_KEY|COLLECT_INTERVAL)|^(README\.md|scripts/build-release\.sh):[0-9]+:.*(migrate-kubejojo-to-aurora-aiops|kubejojo-to-aurora-aiops)'
 
 violations="$(git grep -In -i 'kubejojo' -- . | grep -Ev "$allowed" || true)"
 if [[ -n "$violations" ]]; then

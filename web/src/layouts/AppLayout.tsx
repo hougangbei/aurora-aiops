@@ -11,6 +11,8 @@ import { VersionBadge } from '../components/system/VersionBadge';
 import { getAuthMe, getNamespaces, logout } from '../services/cluster';
 import { useAppStore } from '../stores/appStore';
 import { findNavigationItem, navigationSections } from './navigation';
+import { GlobalTaskIndicator } from '../modules/deployment/components/GlobalTaskIndicator';
+import type { DeploymentTask } from '../modules/deployment/types';
 
 type NavigationPanelProps = {
   currentPath: string;
@@ -208,6 +210,12 @@ export function AppLayout({ children }: PropsWithChildren) {
       .map((item) => ({ label: item, value: item })),
   ];
 
+  // Reuse task lists fetched by visited asset detail pages. This deliberately
+  // does not create a global polling endpoint or fan out requests per server.
+  const visitedTaskLists = queryClient.getQueriesData<DeploymentTask[]>({ queryKey: ['asset-servers'] })
+    .filter(([key, value]) => key.length === 3 && key[2] === 'tasks' && Array.isArray(value))
+    .flatMap(([, value]) => value ?? []);
+
   const activeItem = useMemo(() => findNavigationItem(location.pathname), [location.pathname]);
   const activeSectionKey =
     activeItem?.sectionKey &&
@@ -307,6 +315,7 @@ export function AppLayout({ children }: PropsWithChildren) {
               <Tag color={dataMode === 'demo' ? 'gold' : 'geekblue'} className="rounded-full px-3 py-1">
                 {userName}
               </Tag>
+              <GlobalTaskIndicator tasks={visitedTaskLists} />
               <Button icon={<LogoutOutlined />} onClick={handleLogout}>
                 退出
               </Button>

@@ -1,12 +1,17 @@
 import { CloudDownloadOutlined, LinkOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, App, Button, Card, Descriptions, Modal, Space, Spin, Table, Tabs, Tag, Typography } from 'antd';
+import { Alert, App, Button, Card, Descriptions, List, Modal, Space, Spin, Table, Tabs, Tag, Typography } from 'antd';
 import { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 
 import { collectAssetServer, confirmAssetHostKey, getAssetServer, getLatestAssetSnapshot, listAssetSoftware, testAssetConnection } from '../modules/assets/api';
 import type { AssetServer } from '../modules/assets/types';
 import { useAppStore } from '../stores/appStore';
+import { listDeploymentInstallations, listDeploymentTasks } from '../modules/deployment/api';
+import { TaskProgressDrawer } from '../modules/deployment/components/TaskProgressDrawer';
+import type { DeploymentTask } from '../modules/deployment/types';
+
+const deploymentStatus: Record<DeploymentTask['status'], string> = { queued: '排队中', running: '执行中', succeeded: '成功', failed: '失败', cancelled: '已取消' };
 
 const statusColor: Record<AssetServer['status'], string> = { pending: 'gold', online: 'green', offline: 'default', error: 'red' };
 
@@ -21,6 +26,8 @@ export function AssetServerDetailsPage() {
   const role = useAppStore((state) => state.user?.role);
   const { message } = App.useApp();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'overview');
   const [pendingFingerprint, setPendingFingerprint] = useState<string | null>(null);
   const canOperate = dataMode === 'live' && (role === 'operator' || role === 'admin');
   const canConfirm = dataMode === 'live' && role === 'admin' && Boolean(pendingFingerprint);
@@ -28,6 +35,8 @@ export function AssetServerDetailsPage() {
   const serverQuery = useQuery({ queryKey: ['asset-servers', id], queryFn: () => getAssetServer(id), enabled });
   const snapshotQuery = useQuery({ queryKey: ['asset-servers', id, 'latest-snapshot'], queryFn: () => getLatestAssetSnapshot(id), enabled });
   const softwareQuery = useQuery({ queryKey: ['asset-servers', id, 'software'], queryFn: () => listAssetSoftware(id), enabled });
+  const taskListQuery = useQuery({ queryKey: ['asset-servers', id, 'tasks'], queryFn: () => listDeploymentTasks(id), enabled: enabled && activeTab === 'tasks' });
+  const installationQuery = useQuery({ queryKey: ['asset-servers', id, 'installations'], queryFn: () => listDeploymentInstallations(id), enabled: enabled && activeTab === 'installations' });
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['asset-servers'] });
     void queryClient.invalidateQueries({ queryKey: ['asset-servers', id] });
@@ -52,6 +61,17 @@ export function AssetServerDetailsPage() {
     onSuccess: () => { setPendingFingerprint(null); message.success('SSH 主机密钥已确认'); refresh(); },
     onError: () => message.error('确认 SSH 主机密钥失败'),
   });
+  const selectedTaskId = searchParams.get('task');
+  const openTask = (taskId: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('task', taskId);
+    setSearchParams(next);
+  };
+  const closeTask = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('task');
+    setSearchParams(next);
+  };
 
   if (serverQuery.isLoading) return <div className="flex justify-center py-24"><Spin size="large" /></div>;
   if (!serverQuery.data) return <Alert type="warning" showIcon message={dataMode === 'demo' ? '演示模式未加载服务器详情' : '服务器不存在'} />;
@@ -75,7 +95,7 @@ export function AssetServerDetailsPage() {
       {server.statusMessage ? <Alert type={server.status === 'error' ? 'error' : 'warning'} showIcon message={server.statusMessage} /> : null}
       {pendingFingerprint ? <Alert type="warning" showIcon message="SSH 主机密钥需要管理员确认" description={<code>{pendingFingerprint}</code>} /> : null}
 
-      <Tabs items={[
+      <Tabs activeKey={activeTab} onChange={(key) => { setActiveTab(key); const next = new URLSearchParams(searchParams); next.set('tab', key); setSearchParams(next); }} items={[
         { key: 'overview', label: '概览', children: <Card size="small"><Descriptions column={{ xs: 1, md: 2 }} items={[
           { key: 'os', label: '操作系统', children: snapshot ? `${snapshot.osFamily} ${snapshot.osVersion}` : (server.osFamily || '尚未采集') },
           { key: 'arch', label: '架构', children: snapshot?.architecture || server.architecture || '—' },
@@ -85,9 +105,10 @@ export function AssetServerDetailsPage() {
         { key: 'software', label: '软件', children: <Table rowKey={(item) => `${item.category}-${item.name}-${item.version}`} loading={softwareQuery.isLoading} dataSource={softwareQuery.data ?? []} pagination={false} columns={[
           { title: '类别', dataIndex: 'category' }, { title: '名称', dataIndex: 'name' }, { title: '版本', dataIndex: 'version' }, { title: '来源', dataIndex: 'source' }, { title: '状态', dataIndex: 'status' },
         ]} /> },
-        { key: 'installations', label: '安装记录', children: <Alert type="info" showIcon message="部署任务功能将在下一阶段启用" /> },
-        { key: 'tasks', label: '任务进度', children: <Alert type="info" showIcon message="部署任务功能将在下一阶段启用" /> },
+        { key: 'installations', label: '安装记录', children: <Table rowKey="id" loading={installationQuery.isLoading} dataSource={installationQuery.data ?? []} pagination={false} columns={[{ title: '项目', dataIndex: 'projectId' }, { title: '版本', dataIndex: 'version' }, { title: '状态', render: (_, item: DeploymentTask) => deploymentStatus[item.status] }, { title: '完成时间', dataIndex: 'finishedAt' }]} /> },
+        { key: 'tasks', label: '任务进度', children: <List loading={taskListQuery.isLoading} dataSource={taskListQuery.data ?? []} locale={{ emptyText: dataMode === 'demo' ? '演示模式暂无任务' : '暂无部署任务' }} renderItem={(item) => <List.Item actions={[<Button key="open" type="link" onClick={() => openTask(item.id)}>查看进度</Button>]}><List.Item.Meta title={`${item.projectId} · ${item.version}`} description={`${deploymentStatus[item.status]} · ${item.percent}%`} /></List.Item>} /> },
       ]} />
+      <TaskProgressDrawer taskId={selectedTaskId ?? undefined} open={Boolean(selectedTaskId)} canManage={dataMode === 'live' && role === 'admin'} onClose={closeTask} />
       <Modal open={Boolean(pendingFingerprint)} title="确认 SSH 主机密钥" okText="确认并信任" cancelText="取消" onCancel={() => setPendingFingerprint(null)} onOk={() => confirmMutation.mutate()} okButtonProps={{ disabled: role !== 'admin' }} confirmLoading={confirmMutation.isPending}>
         <p>请核对指纹后再确认：</p><code>{pendingFingerprint}</code>
       </Modal>

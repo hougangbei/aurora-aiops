@@ -7,11 +7,14 @@ import { renderWithProviders } from '../test/render';
 import { collectAssetServer, getAssetServer, getLatestAssetSnapshot, listAssetSoftware, testAssetConnection } from '../modules/assets/api';
 import { AssetServerDetailsPage } from './AssetServerDetailsPage';
 import { useAppStore } from '../stores/appStore';
+import { listDeploymentInstallations, listDeploymentTasks } from '../modules/deployment/api';
 
 vi.mock('../modules/assets/api', () => ({
   getAssetServer: vi.fn(), getLatestAssetSnapshot: vi.fn(), listAssetSoftware: vi.fn(),
   collectAssetServer: vi.fn(), testAssetConnection: vi.fn(), confirmAssetHostKey: vi.fn(),
 }));
+vi.mock('../modules/deployment/api', () => ({ listDeploymentInstallations: vi.fn(), listDeploymentTasks: vi.fn() }));
+vi.mock('../modules/deployment/components/TaskProgressDrawer', () => ({ TaskProgressDrawer: () => null }));
 
 const server = {
   id: 'server-1', name: 'edge-offline', address: '192.0.2.12', username: 'root', sshPort: 22,
@@ -35,6 +38,8 @@ describe('AssetServerDetailsPage', () => {
       id: 'snapshot-1', serverId: 'server-1', hostname: 'edge-offline', osFamily: 'linux', osVersion: '1', kernelVersion: '6.0', architecture: 'amd64', cpuCores: 2, memoryBytes: 1, diskBytes: 1, load1: 0.2, uptimeSeconds: 60, collectedAt: '2026-08-01T00:00:00Z',
     });
     vi.mocked(listAssetSoftware).mockResolvedValue([{ category: 'system', name: 'openssl', version: '3.0', architecture: 'amd64', source: 'apt', status: 'installed' }]);
+    vi.mocked(listDeploymentTasks).mockResolvedValue([]);
+    vi.mocked(listDeploymentInstallations).mockResolvedValue([]);
     useAppStore.setState({ dataMode: 'live', user: { id: 'admin', username: 'admin', role: 'admin' } });
   });
 
@@ -55,12 +60,14 @@ describe('AssetServerDetailsPage', () => {
     await user.click(screen.getByRole('tab', { name: '软件' }));
     expect(await screen.findByText('openssl')).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: '安装记录' }));
-    expect(screen.getAllByText('部署任务功能将在下一阶段启用')).not.toHaveLength(0);
+    expect(screen.getByRole('tab', { name: '安装记录' })).toHaveAttribute('aria-selected', 'true');
     await user.click(screen.getByRole('tab', { name: '任务进度' }));
-    expect(screen.getAllByText('部署任务功能将在下一阶段启用')).not.toHaveLength(0);
+    expect(await screen.findByText('暂无部署任务')).toBeInTheDocument();
     expect(getAssetServer).toHaveBeenCalledWith('server-1');
     expect(getLatestAssetSnapshot).toHaveBeenCalledWith('server-1');
     expect(listAssetSoftware).toHaveBeenCalledWith('server-1');
+    expect(listDeploymentTasks).toHaveBeenCalledWith('server-1');
+    expect(listDeploymentInstallations).toHaveBeenCalledWith('server-1');
     expect(collectAssetServer).not.toHaveBeenCalled();
     expect(testAssetConnection).not.toHaveBeenCalled();
   });

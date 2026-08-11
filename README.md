@@ -248,6 +248,8 @@ AURORA_AIOPS_UPDATE_TARGET_PATH=<optional-installed-binary-path>
 | `AURORA_AIOPS_UPDATE_GITHUB_TOKEN` | 可选，用于提升 GitHub API 访问稳定性和速率限制配额。 |
 | `AURORA_AIOPS_UPDATE_TARGET_PATH` | 可选，显式指定受管二进制路径，便于 release 模式下准确执行更新和回滚。 |
 
+Aurora 项目安装器的目标前置条件、固定步骤、systemd 路径、凭据生命周期、重试与手工回滚见 [Aurora 远程安装运维指南](docs/aiops/operations/aurora-remote-install.md)。自动化门禁与真实主机验收边界见 [Aurora Phase-3 验收记录](docs/aiops/acceptance/2026-08-09-aurora-project-installation.md)。
+
 ## GitHub Release
 
 仓库可通过 `v*` tag 触发 GitHub Release。

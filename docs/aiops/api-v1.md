@@ -249,6 +249,8 @@ Phase-2 将部署任务从资产详情页的临时状态提升为 SQLite 中的�
 
 完整的租约恢复、事件保留和人工处置流程见 [部署任务恢复运维指南](operations/deployment-task-recovery.md)。
 
+Aurora 项目安装器的固定步骤、目标路径、bootstrap 账号生命周期、release 仓库与真实主机门槛见 [Aurora 远程安装运维指南](operations/aurora-remote-install.md)；自动化门禁和本轮未执行真实主机的证据见 [Aurora Phase-3 验收记录](acceptance/2026-08-09-aurora-project-installation.md)。
+
 ## 与 qd 旧接口的对应
 
 | aurora-aiops（Go） | qd（Node，只读参考） |

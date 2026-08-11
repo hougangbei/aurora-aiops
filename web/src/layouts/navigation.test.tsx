@@ -3,6 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { navigationItems, navigationSections } from './navigation';
 
 describe('aiops navigation', () => {
+  it('registers the 资产管理 section with an implemented servers route', () => {
+    const section = navigationSections.find((s) => s.label === '资产管理');
+    expect(section?.items).toEqual([
+      expect.objectContaining({ label: '服务器', path: '/assets/servers', implemented: true }),
+    ]);
+    expect(navigationItems.find((item) => item.path === '/assets/servers')?.sectionLabel).toBe('资产管理');
+  });
+
   it('registers the 智能运维 section', () => {
     const section = navigationSections.find((s) => s.label === '智能运维');
     expect(section).toBeDefined();

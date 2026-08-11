@@ -5,6 +5,7 @@ import {
   AppstoreOutlined,
   BranchesOutlined,
   ClusterOutlined,
+  CloudServerOutlined,
   DatabaseOutlined,
   DeploymentUnitOutlined,
   RobotOutlined,
@@ -29,6 +30,20 @@ export type NavigationSection = {
 };
 
 export const navigationSections: NavigationSection[] = [
+  {
+    key: 'assets',
+    label: '资产管理',
+    icon: <CloudServerOutlined />,
+    items: [
+      {
+        key: 'assets-servers',
+        label: '服务器',
+        path: '/assets/servers',
+        description: '服务器资产登记、连接状态与采集信息查看',
+        implemented: true,
+      },
+    ],
+  },
   {
     key: 'cluster',
     label: '集群',

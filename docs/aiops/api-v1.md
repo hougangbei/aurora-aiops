@@ -1,6 +1,6 @@
 # AIOps API v1
 
-本页记录 Aurora AIOps Go 后端已实现的 `/api/v1` 接口。当前阶段（计划 01 + 01A + 02）落地了 Incident 的创建与查询、平台账号登录、共享集群连接状态与节点发现、证据链与多智能体诊断工作流（Evidence / AgentRun / Reanalyze / SSE 事件流）；审批、执行、工具调用、ChatOps、集成配置在后续计划中实现。
+本页记录 Aurora AIOps Go 后端已实现的 `/api/v1` 接口。当前阶段已落地 Incident 的创建与查询、平台账号登录、共享集群连接状态与节点发现、证据链与多智能体诊断工作流（Evidence / AgentRun / Reanalyze / SSE 事件流）、资产盘点以及 Phase-2 持久化部署任务进度接口。具体项目安装器与真实目标机执行适配器仍在后续 Phase-3/4 实现。
 
 所有接口返回统一信封 `{code, message, data}`：
 
@@ -204,7 +204,50 @@ Incident 状态迁移是严格白名单，非允许迁移返回 `INVALID_INCIDEN
 | 503 | `ASSET_ENCRYPTION_UNAVAILABLE` | 未配置或无法使用资产凭据加密。 |
 | 500 | `ASSET_INTERNAL_ERROR` | 未分类的资产操作失败，不泄漏内部错误或凭据。 |
 
-`project_installations` 仅存在于存储 schema；installations 和 deployment tasks 的 HTTP API 尚未实现，属于下一阶段。Phase-1 也没有定时采集 scheduler，使用 `AURORA_AIOPS_ASSET_COLLECT_INTERVAL` 不会自动创建采集任务。
+`project_installations` 仅存在于存储 schema，独立的 installation 记录写入仍属于后续项目安装器；Phase-2 已提供基于成功 install 任务的 installations 查询和 deployment task API（见下节）。Phase-1 也没有定时采集 scheduler，使用 `AURORA_AIOPS_ASSET_COLLECT_INTERVAL` 不会自动创建采集任务。
+
+## 部署项目与持久化任务 API（Phase-2）
+
+Phase-2 将部署任务从资产详情页的临时状态提升为 SQLite 中的持久化任务、步骤和事件。任务只接受已注册项目安装器生成的固定步骤计划；HTTP 请求不能注入 shell 命令、路径或远端 URL。当前默认服务只装配空项目目录和不可用的目标执行适配器，因此本节描述的是稳定 API/状态机契约，真实 Aurora/Kubernetes 安装器分别在后续 Phase-3/4 注册。
+
+### 项目目录
+
+- `GET /api/v1/projects`：需要登录（viewer / operator / admin），返回已注册项目数组；无项目时 `data` 为 `[]`。
+- `GET /api/v1/projects/:projectID`：需要登录，返回项目描述、支持版本、操作系统族和架构；未知项目返回 404 `DEPLOYMENT_UNKNOWN_PROJECT`。
+
+### 创建与查询任务
+
+- `POST /api/v1/projects/:projectID/install`：仅 admin。请求体为 `{ "serverId": "...", "version": "...", "configuration": {} }`；配置先由对应安装器严格规范化，再以 AES-256-GCM 加密写入任务，原始请求字节不会保留。成功返回 201 和任务 DTO，初始状态为 `queued`。
+- `GET /api/v1/assets/servers/:serverID/tasks`：需要登录，按创建时间升序返回该服务器的任务历史。
+- `GET /api/v1/assets/servers/:serverID/installations`：需要登录，仅返回该服务器已成功的 `install` 任务；Phase-2 不创建 `project_installations` 记录。
+- `GET /api/v1/deployment-tasks/:taskID`：需要登录，返回 `{ "task": {...}, "steps": [...] }`。任务/步骤 DTO 不含加密配置、凭据、任务值或租约内部字段。
+
+任务状态固定为 `queued`、`running`、`succeeded`、`failed`、`cancelled`；步骤状态为 `pending`、`running`、`succeeded`、`failed`、`skipped`、`cancelled`。百分比只能单调递增，成功必须以所有步骤完成且达到 100% 结束；终态不可再次变更。每台服务器通过 SQLite partial unique index 最多有一个 `queued` 或 `running` 任务。
+
+### 取消与重试
+
+- `POST /api/v1/deployment-tasks/:taskID/cancel`：仅 admin；`queued`/`running` 任务设置 `cancelRequested`，由 worker 在步骤边界或可取消远程命令中止并最终标记 `cancelled`。取消**不会回滚已完成的远程改变**，重试必须依靠安装器的 probe/idempotency 检查。
+- `POST /api/v1/deployment-tasks/:taskID/retry`：仅 admin；只允许从 `succeeded`、`failed`、`cancelled` 创建新任务。新任务有新的 ID，`retryOf` 指向原任务，并重新经过同一台服务器的活动任务互斥检查。
+
+### 事件流与断线恢复
+
+`GET /api/v1/deployment-tasks/:taskID/events` 需要登录（viewer / operator / admin），返回 `text/event-stream`。客户端可使用 `Last-Event-ID`，或在无法设置请求头时使用 `?lastEventId=<非负整数>`；服务端先从 SQLite 重放 `id > lastEventId` 的事件，再订阅实时唤醒。事件帧包含 `id`、`event`、JSON `data`，每 10 秒发送 `: heartbeat`。事件先提交到 SQLite 再唤醒订阅者，慢客户端不会阻塞写入；终态任务重放完毕后连接关闭。前端若连续 3 次 SSE 失败，会保留最后事件 ID 并切换为每 2 秒查询任务详情，直到终态；详情刷新时百分比不会倒退。
+
+### 部署错误码与权限
+
+| HTTP | code | 说明 |
+| --- | --- | --- |
+| 400 | `INVALID_ARGUMENT` | 请求 JSON、版本、配置或参数不合法。 |
+| 401 | `UNAUTHORIZED` | 未登录。 |
+| 403 | `FORBIDDEN` | viewer/operator 调用 admin-only 的安装、取消或重试。 |
+| 404 | `NOT_FOUND` | 任务、服务器或资源不存在。 |
+| 404 | `DEPLOYMENT_UNKNOWN_PROJECT` | 项目未注册。 |
+| 409 | `DEPLOYMENT_ACTIVE_TASK` | 同一服务器已有 `queued`/`running` 任务。 |
+| 409 | `DEPLOYMENT_INVALID_TRANSITION` | 状态、步骤或重试边界不允许该操作。 |
+| 422 | `DEPLOYMENT_UNSUPPORTED_TARGET` | 目标 OS/架构不在项目目录支持矩阵。 |
+| 503 | `DEPLOYMENT_ENCRYPTION_UNAVAILABLE` | 未配置可用的 32 字节资产加密主密钥。 |
+
+完整的租约恢复、事件保留和人工处置流程见 [部署任务恢复运维指南](operations/deployment-task-recovery.md)。
 
 ## 与 qd 旧接口的对应
 

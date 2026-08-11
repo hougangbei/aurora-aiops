@@ -135,6 +135,19 @@ func TestLoadUpdateRepositoryDefaultsToProjectRepository(t *testing.T) {
 	}
 }
 
+func TestLoadUpdateRepositorySupportsExplicitOverride(t *testing.T) {
+	t.Setenv("AURORA_AIOPS_UPDATE_REPOSITORY", "example-owner/example-repository")
+	t.Setenv("KUBEJOJO_UPDATE_REPOSITORY", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Update.Repository != "example-owner/example-repository" {
+		t.Fatalf("Repository = %q, want explicit override", cfg.Update.Repository)
+	}
+}
+
 func TestLoadPrefersAuroraEnvironmentOverLegacy(t *testing.T) {
 	t.Setenv("AURORA_AIOPS_LLM_MODEL", "aurora-model")
 	t.Setenv("KUBEJOJO_LLM_MODEL", "legacy-model")

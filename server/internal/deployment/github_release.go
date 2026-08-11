@@ -198,13 +198,13 @@ func (r *GitHubReleaseResolver) Download(ctx context.Context, artifact ReleaseAr
 		return fmt.Errorf("release archive size exceeds limit")
 	}
 	hash := sha256.New()
-	limited := io.LimitReader(response.Body, maxReleaseArchiveBytes+1)
-	n, err := io.Copy(io.MultiWriter(dst, hash), limited)
+	sink := &boundedArchiveWriter{dst: dst, hash: hash, limit: maxReleaseArchiveBytes}
+	n, err := io.Copy(sink, response.Body)
 	if err != nil {
+		if errors.Is(err, errReleaseArchiveTooLarge) {
+			return fmt.Errorf("release archive size exceeds limit")
+		}
 		return fmt.Errorf("download release archive: %w", err)
-	}
-	if n > maxReleaseArchiveBytes {
-		return fmt.Errorf("release archive size exceeds limit")
 	}
 	if artifact.Size > 0 && n != artifact.Size {
 		return fmt.Errorf("release archive size mismatch")
@@ -213,6 +213,41 @@ func (r *GitHubReleaseResolver) Download(ctx context.Context, artifact ReleaseAr
 		return fmt.Errorf("release archive checksum mismatch")
 	}
 	return nil
+}
+
+var errReleaseArchiveTooLarge = errors.New("release archive exceeds size limit")
+
+type boundedArchiveWriter struct {
+	dst   io.Writer
+	hash  io.Writer
+	limit int64
+	n     int64
+}
+
+func (w *boundedArchiveWriter) Write(p []byte) (int, error) {
+	if w.n+int64(len(p)) > w.limit {
+		allowed := int(w.limit - w.n)
+		if allowed > 0 {
+			if _, err := w.dst.Write(p[:allowed]); err != nil {
+				return 0, err
+			}
+			_, _ = w.hash.Write(p[:allowed])
+			w.n += int64(allowed)
+		}
+		return allowed, errReleaseArchiveTooLarge
+	}
+	written, err := w.dst.Write(p)
+	if written > 0 {
+		_, _ = w.hash.Write(p[:written])
+		w.n += int64(written)
+	}
+	if err != nil {
+		return written, err
+	}
+	if written != len(p) {
+		return written, io.ErrShortWrite
+	}
+	return written, nil
 }
 
 func (r *GitHubReleaseResolver) getJSON(ctx context.Context, endpoint string, dst any) error {

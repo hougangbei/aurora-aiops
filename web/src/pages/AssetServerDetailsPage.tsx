@@ -32,17 +32,21 @@ export function AssetServerDetailsPage() {
     void queryClient.invalidateQueries({ queryKey: ['asset-servers'] });
     void queryClient.invalidateQueries({ queryKey: ['asset-servers', id] });
   };
-  const runAction = (action: () => Promise<unknown>, success: string) => useMutation({
-    mutationFn: action,
-    onSuccess: () => { message.success(success); refresh(); },
-    onError: (error) => {
-      const fingerprint = fingerprintFromError(error);
-      if (fingerprint) setPendingFingerprint(fingerprint);
-      else message.error('资产操作失败');
-    },
+  const handleAssetActionError = (error: unknown) => {
+    const fingerprint = fingerprintFromError(error);
+    if (fingerprint) setPendingFingerprint(fingerprint);
+    else message.error('资产操作失败');
+  };
+  const testMutation = useMutation({
+    mutationFn: () => testAssetConnection(id),
+    onSuccess: () => { message.success('连接测试成功'); refresh(); },
+    onError: handleAssetActionError,
   });
-  const testMutation = runAction(() => testAssetConnection(id), '连接测试成功');
-  const collectMutation = runAction(() => collectAssetServer(id), '资产采集已完成');
+  const collectMutation = useMutation({
+    mutationFn: () => collectAssetServer(id),
+    onSuccess: () => { message.success('资产采集已完成'); refresh(); },
+    onError: handleAssetActionError,
+  });
   const confirmMutation = useMutation({
     mutationFn: () => confirmAssetHostKey(id, pendingFingerprint ?? ''),
     onSuccess: () => { setPendingFingerprint(null); message.success('SSH 主机密钥已确认'); refresh(); },

@@ -31,8 +31,8 @@ export async function testAssetConnection(id: string): Promise<ConnectionResult>
   return unwrap(await http.post(`${serverPath(id)}/test-connection`));
 }
 
-export async function confirmAssetHostKey(id: string, fingerprint: string): Promise<{ confirmed: boolean }> {
-  return unwrap(await http.post(`${serverPath(id)}/confirm-host-key`, { fingerprint }));
+export async function confirmAssetHostKey(id: string, fingerprint: string): Promise<void> {
+  await http.post(`${serverPath(id)}/confirm-host-key`, { fingerprint });
 }
 
 export async function collectAssetServer(id: string): Promise<AssetSnapshot> {

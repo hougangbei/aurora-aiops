@@ -96,7 +96,7 @@ describe('AddServerDrawer', () => {
     vi.mocked(createAssetServer).mockRejectedValue({
       response: { status: 409, data: { data: { fingerprint: 'SHA256:untrusted', server: createdServer } } },
     });
-    vi.mocked(confirmAssetHostKey).mockResolvedValue({ confirmed: true });
+    vi.mocked(confirmAssetHostKey).mockResolvedValue(undefined);
     renderWithProviders(<ControlledDrawer />);
 
     await fillPasswordForm(user);

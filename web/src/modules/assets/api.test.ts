@@ -60,7 +60,7 @@ describe('asset API client', () => {
     postMock.mockResolvedValue(okEnvelope({ fingerprint: 'SHA256:test', trusted: true, changed: false }));
 
     await testAssetConnection('server-1');
-    await confirmAssetHostKey('server-1', 'SHA256:test');
+    await expect(confirmAssetHostKey('server-1', 'SHA256:test')).resolves.toBeUndefined();
     await collectAssetServer('server-1');
 
     expect(postMock).toHaveBeenNthCalledWith(1, '/assets/servers/server-1/test-connection');

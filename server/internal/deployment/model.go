@@ -3,6 +3,8 @@ package deployment
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"io/fs"
 	"time"
 
 	"github.com/hougangbei/aurora-aiops/server/internal/assets"
@@ -41,7 +43,16 @@ type Project struct {
 	Versions, SupportedOSFamilies, SupportedArchitectures []string
 }
 
-type ExecutionContext struct{}
+// ExecutionContext exposes only fixed, installer-approved operations. It never
+// exposes SSH credentials or arbitrary request-provided shell commands.
+type ExecutionContext interface {
+	Server() assets.Server
+	Run(context.Context, string, int64) (assets.CommandResult, error)
+	Upload(context.Context, io.Reader, int64, string, fs.FileMode) error
+	Log(string)
+	SetValue(string, string) error
+	Value(string) (string, bool)
+}
 
 type StepDefinition struct {
 	ID, Label string

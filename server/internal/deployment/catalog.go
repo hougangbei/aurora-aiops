@@ -43,6 +43,18 @@ func (c *Catalog) Get(id string) (Project, bool) {
 	return cloneProject(installer.Project()), true
 }
 
+// Installer returns the registered implementation for worker execution. The
+// catalog owns the registration and callers cannot mutate its project copy.
+func (c *Catalog) Installer(id string) (Installer, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	installer, ok := c.installers[id]
+	if !ok {
+		return nil, false
+	}
+	return installer, true
+}
+
 func (c *Catalog) List() []Project {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

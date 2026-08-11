@@ -1,10 +1,12 @@
 package catalog
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -14,9 +16,32 @@ import (
 
 const kubernetesProjectID = "kubernetes"
 
-type KubernetesInstaller struct{}
+type KubernetesInstaller struct {
+	repo   *deployment.Repository
+	cipher deployment.SecretCipher
+	cilium *CiliumDownloader
+}
 
-func NewKubernetesInstaller() *KubernetesInstaller { return &KubernetesInstaller{} }
+// NewKubernetesInstaller accepts optional repository/cipher dependencies. A
+// dependency-free instance is still useful for catalog compatibility checks,
+// but its final save step fails closed instead of discarding kubeconfig data.
+func NewKubernetesInstaller(dependencies ...any) *KubernetesInstaller {
+	installer := &KubernetesInstaller{}
+	for _, dependency := range dependencies {
+		switch value := dependency.(type) {
+		case *deployment.Repository:
+			installer.repo = value
+		case deployment.SecretCipher:
+			installer.cipher = value
+		case *CiliumDownloader:
+			installer.cilium = value
+		}
+	}
+	if installer.cilium == nil {
+		installer.cilium = NewCiliumDownloader(http.DefaultClient, defaultCiliumReleaseOrigin)
+	}
+	return installer
+}
 
 func (i *KubernetesInstaller) Project() deployment.Project {
 	return deployment.Project{
@@ -85,6 +110,19 @@ func (i *KubernetesInstaller) BuildPlan(task deployment.Task, server assets.Serv
 			if stepIndex == 0 {
 				return runKubeadmCommand(ctx, exec, "LC_ALL=C true")
 			}
+			if stepIndex == 9 {
+				if i == nil || i.repo == nil {
+					return false, nil
+				}
+				return i.repo.HasSecret(ctx, server.ID, task.ProjectID, "kubeconfig")
+			}
+			if stepIndex == 7 {
+				result, err := exec.Run(ctx, kubeadmPrivilege(server, "KUBECONFIG=/etc/kubernetes/admin.conf /usr/local/bin/cilium status --wait --wait-duration 30s"), 64<<10)
+				if err != nil && ctx.Err() != nil {
+					return false, ctx.Err()
+				}
+				return err == nil && result.ExitCode == 0, nil
+			}
 			return false, nil
 		}
 		steps[index].Run = func(ctx context.Context, exec deployment.ExecutionContext) error {
@@ -96,6 +134,24 @@ func (i *KubernetesInstaller) BuildPlan(task deployment.Task, server assets.Serv
 				_, err := exec.Run(ctx, "test \"$(uname -s)\" = Linux", 4096)
 				return err
 			}
+			if stepIndex == 9 {
+				return i.saveCluster(ctx, exec, task, server)
+			}
+			if stepIndex == 7 {
+				return i.installCilium(ctx, exec, server)
+			}
+			if stepIndex == 5 {
+				configYAML, err := kubeadmConfigYAML(server.Name)
+				if err != nil {
+					return err
+				}
+				if err := exec.Upload(ctx, strings.NewReader(configYAML), int64(len(configYAML)), kubeadmConfigStagingPath, 0o600); err != nil {
+					return fmt.Errorf("upload kubeadm configuration")
+				}
+				if _, err := exec.Run(ctx, kubeadmPrivilege(server, "install -m 0600 "+commandPath(kubeadmConfigStagingPath)+" "+commandPath(kubeadmConfigPath)), 64<<10); err != nil {
+					return fmt.Errorf("install kubeadm configuration")
+				}
+			}
 			groups := map[int][]string{
 				2: commands[0:7], 3: commands[7:9], 4: commands[9:14],
 				5: commands[14:16], 6: commands[16:18], 7: commands[18:19], 8: commands[19:20], 9: []string{"test -s /etc/kubernetes/admin.conf"},
@@ -104,6 +160,56 @@ func (i *KubernetesInstaller) BuildPlan(task deployment.Task, server assets.Serv
 		}
 	}
 	return steps, nil
+}
+
+func (i *KubernetesInstaller) installCilium(ctx context.Context, exec deployment.ExecutionContext, server assets.Server) error {
+	if i == nil || i.cilium == nil {
+		return fmt.Errorf("cilium artifact downloader is unavailable")
+	}
+	archive, err := i.cilium.Download(ctx, server.Architecture)
+	if err != nil {
+		return err
+	}
+	defer clear(archive)
+	remotePath := "/tmp/aurora-aiops/cilium-linux-" + server.Architecture
+	if err := exec.Upload(ctx, bytes.NewReader(archive), int64(len(archive)), remotePath, 0o700); err != nil {
+		return fmt.Errorf("upload cilium CLI")
+	}
+	if _, err := exec.Run(ctx, kubeadmPrivilege(server, "install -m 0755 "+commandPath(remotePath)+" /usr/local/bin/cilium"), 64<<10); err != nil {
+		return fmt.Errorf("install cilium CLI")
+	}
+	if _, err := exec.Run(ctx, kubeadmPrivilege(server, "KUBECONFIG=/etc/kubernetes/admin.conf /usr/local/bin/cilium install --version 1.19.4 --set ipam.mode=kubernetes"), 64<<10); err != nil {
+		return fmt.Errorf("install cilium")
+	}
+	return nil
+}
+
+func (i *KubernetesInstaller) saveCluster(ctx context.Context, exec deployment.ExecutionContext, task deployment.Task, server assets.Server) error {
+	if i == nil || i.repo == nil || i.cipher == nil {
+		return deployment.ErrEncryptionUnavailable
+	}
+	result, err := exec.Run(ctx, kubeadmPrivilege(server, "cat -- /etc/kubernetes/admin.conf"), 1<<20)
+	if err != nil {
+		return fmt.Errorf("read admin kubeconfig")
+	}
+	if result.ExitCode != 0 || result.Truncated || len(result.Stdout) == 0 || len(result.Stdout) > 1<<20 {
+		return fmt.Errorf("read admin kubeconfig")
+	}
+	plain := []byte(result.Stdout)
+	defer clear(plain)
+	if err := validateAdminKubeconfig(plain); err != nil {
+		return err
+	}
+	sealed, err := i.cipher.SealResource("kubeconfig", server.ID, task.ProjectID, plain)
+	if err != nil {
+		return deployment.ErrEncryptionUnavailable
+	}
+	health := `{"status":"ready","kubernetesVersion":"v1.35.6","ciliumVersion":"1.19.4"}`
+	if err := i.repo.SaveManagedInstallation(ctx, server.ID, task.ProjectID, task.Version, task.ID, health, sealed); err != nil {
+		return err
+	}
+	exec.Log("managed Kubernetes cluster saved")
+	return nil
 }
 
 func runKubeadmCommands(ctx context.Context, exec deployment.ExecutionContext, commands []string) error {

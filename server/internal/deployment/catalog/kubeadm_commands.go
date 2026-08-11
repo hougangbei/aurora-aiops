@@ -9,16 +9,17 @@ import (
 )
 
 const (
-	kubernetesVersion = "v1.35.6"
-	kubernetesPackage = "1.35.6-1.1"
-	ciliumVersion     = "1.19.4"
-	ciliumCLIVersion  = "0.19.2"
-	kubernetesPodCIDR = "10.244.0.0/16"
-	containerdSocket  = "unix:///run/containerd/containerd.sock"
-	containerdConfig  = "/etc/containerd/config.toml"
-	kubeadmConfigPath = "/etc/kubernetes/kubeadm-config.yaml"
-	kubeadmKeyring    = "/etc/apt/keyrings/kubernetes-archive-keyring.gpg"
-	kubeadmSource     = "/etc/apt/sources.list.d/kubernetes.list"
+	kubernetesVersion        = "v1.35.6"
+	kubernetesPackage        = "1.35.6-1.1"
+	ciliumVersion            = "1.19.4"
+	ciliumCLIVersion         = "0.19.2"
+	kubernetesPodCIDR        = "10.244.0.0/16"
+	containerdSocket         = "unix:///run/containerd/containerd.sock"
+	containerdConfig         = "/etc/containerd/config.toml"
+	kubeadmConfigPath        = "/etc/kubernetes/kubeadm-config.yaml"
+	kubeadmConfigStagingPath = "/tmp/aurora-aiops/kubeadm-config.yaml"
+	kubeadmKeyring           = "/etc/apt/keyrings/kubernetes-archive-keyring.gpg"
+	kubeadmSource            = "/etc/apt/sources.list.d/kubernetes.list"
 )
 
 var kubeadmHostnamePattern = regexp.MustCompile(`^(?i:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?i:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$`)

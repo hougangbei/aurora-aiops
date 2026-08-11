@@ -204,6 +204,34 @@ func TestRepositoryStoresAndOpensResourceSecretWithoutEnvelopeProjection(t *test
 	}
 }
 
+func TestRepositorySavesManagedInstallationAtomically(t *testing.T) {
+	ctx, db := context.Background(), openDeploymentDB(t)
+	seedDeploymentServer(t, db, "server-1")
+	repo := NewRepository(db, time.Now)
+	cipher, err := NewSecretCipher(bytes32())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := cipher.SealResource("kubeconfig", "server-1", "kubernetes", []byte("secret-kubeconfig"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SaveManagedInstallation(ctx, "server-1", "kubernetes", "v1.35.6", "task-1", `{"status":"ready"}`, sealed); err != nil {
+		t.Fatal(err)
+	}
+	var status, version, health, taskID string
+	if err := db.QueryRow(`SELECT status,version,health_summary,last_task_id FROM project_installations WHERE server_id=? AND project_id=?`, "server-1", "kubernetes").Scan(&status, &version, &health, &taskID); err != nil {
+		t.Fatal(err)
+	}
+	if status != "managed" || version != "v1.35.6" || health != `{"status":"ready"}` || taskID != "task-1" {
+		t.Fatalf("installation=(%q,%q,%q,%q)", status, version, health, taskID)
+	}
+	opened, err := repo.OpenSecret(ctx, "server-1", "kubernetes", "kubeconfig", cipher)
+	if err != nil || string(opened) != "secret-kubeconfig" {
+		t.Fatalf("opened=(%q,%v)", opened, err)
+	}
+}
+
 func TestRepositoryFencesExpiredLeaseAndRestartsRunningStep(t *testing.T) {
 	ctx, db := context.Background(), openDeploymentDB(t)
 	seedDeploymentServer(t, db, "server-1")

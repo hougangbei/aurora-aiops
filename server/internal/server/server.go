@@ -113,6 +113,9 @@ func Run(info buildinfo.Info) error {
 	if err := deploymentCatalog.Register(deploymentcatalog.NewAuroraInstaller(releaseResolver)); err != nil {
 		return fmt.Errorf("register Aurora installer: %w", err)
 	}
+	if err := deploymentCatalog.Register(deploymentcatalog.NewKubernetesInstaller()); err != nil {
+		return fmt.Errorf("register Kubernetes installer: %w", err)
+	}
 	deploymentService := deployment.NewService(deploymentRepo, deploymentCatalog, deploymentCipher, assetService.Get, auditRepo, deploymentEvents, time.Now)
 	workerCipher := deploymentCipher
 	if workerCipher == nil {

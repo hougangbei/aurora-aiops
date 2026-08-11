@@ -138,7 +138,7 @@ func (i *KubernetesInstaller) BuildPlan(task deployment.Task, server assets.Serv
 				return err
 			}
 			if stepIndex == 1 {
-				result, err := exec.Run(ctx, "if test -s /etc/kubernetes/admin.conf; then exit 42; fi; test \"$(uname -s)\" = Linux", 4096)
+				result, err := exec.Run(ctx, kubeadmPrivilege(server, "if test -s /etc/kubernetes/admin.conf; then exit 42; fi; test \"$(uname -s)\" = Linux"), 4096)
 				if err != nil && ctx.Err() != nil {
 					return ctx.Err()
 				}

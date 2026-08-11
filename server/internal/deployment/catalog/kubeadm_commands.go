@@ -53,6 +53,8 @@ func kubeadmCommands(server assets.Server) ([]string, error) {
 		priv("kubectl --kubeconfig /etc/kubernetes/admin.conf taint nodes --all node-role.kubernetes.io/control-plane-"),
 		priv("KUBECONFIG=/etc/kubernetes/admin.conf cilium install --version " + ciliumVersion + " --set ipam.mode=kubernetes"),
 		priv("KUBECONFIG=/etc/kubernetes/admin.conf cilium status --wait --wait-duration 15m"),
+		priv("kubectl --kubeconfig /etc/kubernetes/admin.conf wait --for=condition=Ready nodes --all --timeout=15m"),
+		priv("kubectl --kubeconfig /etc/kubernetes/admin.conf wait --for=condition=Ready pods --all --namespace kube-system --timeout=15m"),
 	}, nil
 }
 

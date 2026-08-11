@@ -123,6 +123,13 @@ func (i *KubernetesInstaller) BuildPlan(task deployment.Task, server assets.Serv
 				}
 				return err == nil && result.ExitCode == 0, nil
 			}
+			if stepIndex == 8 {
+				result, err := exec.Run(ctx, kubeadmPrivilege(server, "kubectl --kubeconfig /etc/kubernetes/admin.conf wait --for=condition=Ready nodes --all --timeout=30s"), 64<<10)
+				if err != nil && ctx.Err() != nil {
+					return false, ctx.Err()
+				}
+				return err == nil && result.ExitCode == 0, nil
+			}
 			return false, nil
 		}
 		steps[index].Run = func(ctx context.Context, exec deployment.ExecutionContext) error {
@@ -131,7 +138,13 @@ func (i *KubernetesInstaller) BuildPlan(task deployment.Task, server assets.Serv
 				return err
 			}
 			if stepIndex == 1 {
-				_, err := exec.Run(ctx, "test \"$(uname -s)\" = Linux", 4096)
+				result, err := exec.Run(ctx, "if test -s /etc/kubernetes/admin.conf; then exit 42; fi; test \"$(uname -s)\" = Linux", 4096)
+				if err != nil && ctx.Err() != nil {
+					return ctx.Err()
+				}
+				if result.ExitCode == 42 {
+					return &deployment.AdoptionRequiredError{Summary: deployment.AdoptionSummary{Version: "existing kubeadm cluster"}}
+				}
 				return err
 			}
 			if stepIndex == 9 {
@@ -154,7 +167,7 @@ func (i *KubernetesInstaller) BuildPlan(task deployment.Task, server assets.Serv
 			}
 			groups := map[int][]string{
 				2: commands[0:7], 3: commands[7:9], 4: commands[9:14],
-				5: commands[14:16], 6: commands[16:18], 7: commands[18:19], 8: commands[19:20], 9: []string{"test -s /etc/kubernetes/admin.conf"},
+				5: commands[14:16], 6: commands[16:18], 7: commands[18:19], 8: commands[19:22], 9: []string{"test -s /etc/kubernetes/admin.conf"},
 			}
 			return runKubeadmCommands(ctx, exec, groups[stepIndex])
 		}

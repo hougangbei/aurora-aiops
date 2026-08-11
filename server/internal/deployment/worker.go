@@ -165,6 +165,9 @@ func (w *Worker) executeClaimed(ctx context.Context, task Task) error {
 				return w.finishCancelled(ctx, task.ID)
 			}
 			code := "STEP_FAILED"
+			if errors.Is(probeErr, ErrAdoptionRequired) {
+				code = "KUBERNETES_ADOPTION_REQUIRED"
+			}
 			if errors.Is(probeErr, context.DeadlineExceeded) {
 				code = "STEP_TIMEOUT"
 			}
@@ -182,6 +185,9 @@ func (w *Worker) executeClaimed(ctx context.Context, task Task) error {
 					return w.finishCancelled(ctx, task.ID)
 				}
 				code := "STEP_FAILED"
+				if errors.Is(runErr, ErrAdoptionRequired) {
+					code = "KUBERNETES_ADOPTION_REQUIRED"
+				}
 				if errors.Is(runErr, context.DeadlineExceeded) {
 					code = "STEP_TIMEOUT"
 				}

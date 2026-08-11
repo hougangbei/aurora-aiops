@@ -41,7 +41,7 @@ resolve_sources() {
     if [[ -f "$script_dir/aurora-aiops" ]]; then
       binary_source="$script_dir/aurora-aiops"
     else
-      binary_source="$repo_root/server/dist/release/latest/aurora-aiops"
+      binary_source="$(find "$repo_root/server/dist/release" -mindepth 2 -maxdepth 2 -type f -name aurora-aiops -print 2>/dev/null | sort | tail -n 1)"
     fi
   fi
   if [[ -z "$unit_source" ]]; then

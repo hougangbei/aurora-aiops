@@ -80,6 +80,11 @@ jobs:
           cd release-assets
           sha256sum *.tar.gz > checksums.txt
 
+      - name: Lint and verify release assets
+        run: |
+          shellcheck scripts/build-release.sh scripts/verify-release-assets.sh scripts/verify-release-assets.test.sh
+          scripts/verify-release-assets.sh release-assets "${GITHUB_REF_NAME#v}"
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:

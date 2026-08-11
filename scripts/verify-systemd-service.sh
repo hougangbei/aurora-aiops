@@ -8,8 +8,9 @@ unit="$repo_root/deploy/aurora-aiops.service"
 grep -q '^Description=Aurora AIOps ' "$unit"
 grep -q '^User=aurora-aiops$' "$unit"
 grep -q '^Group=aurora-aiops$' "$unit"
-grep -q '^WorkingDirectory=/opt/aurora-aiops$' "$unit"
-grep -q '^ExecStart=/opt/aurora-aiops/aurora-aiops$' "$unit"
+grep -q '^WorkingDirectory=/opt/aurora-aiops/current$' "$unit"
+grep -q '^ExecStart=/opt/aurora-aiops/current/aurora-aiops$' "$unit"
+grep -q '^EnvironmentFile=-/etc/aurora-aiops/aurora-aiops.env$' "$unit"
 grep -q '^Environment=AURORA_AIOPS_AIOPS_DB=/opt/aurora-aiops/data/aurora-aiops.db$' "$unit"
 
 if command -v systemd-analyze >/dev/null 2>&1; then

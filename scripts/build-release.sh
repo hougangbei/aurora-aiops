@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+umask 022
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WEB_DIR="$ROOT_DIR/web"
@@ -20,7 +21,6 @@ PACKAGE_STEM="aurora-aiops_${VERSION}_${GOOS}_${GOARCH}"
 PACKAGE_DIR="$RELEASE_DIR/$PACKAGE_STEM"
 ARCHIVE_PATH="$RELEASE_DIR/${PACKAGE_STEM}.tar.gz"
 CHECKSUM_PATH="$RELEASE_DIR/checksums.txt"
-LATEST_SYMLINK="$RELEASE_DIR/latest"
 
 if [[ -z "$VERSION" ]]; then
   echo "VERSION is empty" >&2
@@ -91,12 +91,60 @@ mkdir -p "$PACKAGE_DIR"
 
 cp "$SERVICE_FILE" "$PACKAGE_DIR/aurora-aiops.service"
 cp "$ROOT_DIR/scripts/migrate-kubejojo-to-aurora-aiops.sh" "$PACKAGE_DIR/"
+chmod 0755 "$PACKAGE_DIR/aurora-aiops" "$PACKAGE_DIR/migrate-kubejojo-to-aurora-aiops.sh"
+chmod 0644 "$PACKAGE_DIR/aurora-aiops.service"
 
 echo "==> Packaging release archive"
 mkdir -p "$RELEASE_DIR"
 rm -f "$ARCHIVE_PATH"
-tar -C "$RELEASE_DIR" -czf "$ARCHIVE_PATH" "$PACKAGE_STEM"
-ln -sfn "$PACKAGE_STEM" "$LATEST_SYMLINK"
+if [[ -L "$RELEASE_DIR/latest" ]]; then
+  rm -f "$RELEASE_DIR/latest"
+fi
+if tar --version 2>/dev/null | grep -q 'GNU tar'; then
+  tar -C "$RELEASE_DIR" \
+    --sort=name \
+    --mtime='UTC 1970-01-01' \
+    --owner=0 \
+    --group=0 \
+    --numeric-owner \
+    -czf "$ARCHIVE_PATH" "$PACKAGE_STEM"
+elif command -v python3 >/dev/null 2>&1; then
+  # BSD tar (the default on macOS) lacks the reproducibility flags above.
+  # Keep the same archive contract through a small deterministic tar writer.
+  python3 - "$RELEASE_DIR" "$PACKAGE_STEM" "$ARCHIVE_PATH" <<'PY'
+import gzip
+import pathlib
+import sys
+import tarfile
+
+release_dir = pathlib.Path(sys.argv[1])
+package_stem = sys.argv[2]
+archive_path = pathlib.Path(sys.argv[3])
+package_dir = release_dir / package_stem
+entries = [package_dir, *sorted(package_dir.rglob("*"), key=lambda path: path.relative_to(release_dir).as_posix())]
+
+with archive_path.open("wb") as raw:
+    with gzip.GzipFile(fileobj=raw, mode="wb", filename="", mtime=0) as compressed:
+        with tarfile.open(fileobj=compressed, mode="w:", format=tarfile.GNU_FORMAT) as archive:
+            for entry in entries:
+                relative_name = entry.relative_to(release_dir).as_posix()
+                info = archive.gettarinfo(str(entry), arcname=relative_name)
+                info.mtime = 0
+                info.uid = 0
+                info.gid = 0
+                info.uname = ""
+                info.gname = ""
+                if info.isdir():
+                    info.mode = 0o755
+                    archive.addfile(info)
+                else:
+                    with entry.open("rb") as source:
+                        archive.addfile(info, source)
+PY
+else
+  echo "GNU tar or python3 is required for deterministic release archives" >&2
+  exit 1
+fi
 
 echo "==> Writing checksum"
 (

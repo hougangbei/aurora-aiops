@@ -216,7 +216,7 @@ release 产物包含：
 - `checksums.txt`
 - 内嵌前端静态资源的 `aurora-aiops` 二进制
 - `aurora-aiops.service`
-- `latest` 软链接
+- 不生成可变的 `latest` 软链接；请使用版本化 package 目录
 
 查看二进制版本：
 

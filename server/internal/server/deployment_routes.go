@@ -62,6 +62,21 @@ func registerDeploymentRoutes(group *gin.RouterGroup, svc *deployment.Service) {
 		}
 		c.JSON(http.StatusCreated, response.Success(taskDTO(task)))
 	})
+	group.POST("/projects/:projectID/adopt", RequireAdmin(), func(c *gin.Context) {
+		var req struct {
+			ServerID string `json:"serverId"`
+		}
+		if err := decodeAssetJSON(c, &req); err != nil || req.ServerID == "" {
+			respondDeploymentError(c, deployment.ErrInvalidInput)
+			return
+		}
+		task, err := svc.Adopt(c.Request.Context(), currentActorName(c), c.Param("projectID"), req.ServerID)
+		if err != nil {
+			respondDeploymentError(c, err)
+			return
+		}
+		c.JSON(http.StatusCreated, response.Success(taskDTO(task)))
+	})
 	group.GET("/assets/servers/:serverID/tasks", func(c *gin.Context) {
 		tasks, err := svc.ListServerTasks(c.Request.Context(), c.Param("serverID"))
 		if err != nil {

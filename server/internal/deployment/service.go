@@ -125,6 +125,50 @@ func (s *Service) Install(ctx context.Context, actor, projectID string, req Inst
 	return created, nil
 }
 
+// Adopt schedules the read-only Kubernetes inspection path. It uses the same
+// durable task lock and progress stream as installation, but the catalog
+// rejects every mutating command for this action.
+func (s *Service) Adopt(ctx context.Context, actor, projectID, serverID string) (Task, error) {
+	if s == nil || s.catalog == nil || actor == "" || serverID == "" || projectID != "kubernetes" {
+		return Task{}, ErrInvalidInput
+	}
+	installer, ok := s.catalog.Installer(projectID)
+	if !ok || s.servers == nil {
+		return Task{}, ErrUnknownProject
+	}
+	server, err := s.servers(ctx, serverID)
+	if err != nil {
+		return s.installFailure(ctx, actor, projectID, serverID, "target_unavailable", mapAssetError(err))
+	}
+	project := installer.Project()
+	if !supportedTarget(project, server) || len(project.Versions) == 0 {
+		return s.installFailure(ctx, actor, projectID, serverID, "unsupported_target", ErrUnsupportedTarget)
+	}
+	if s.cipher == nil || s.repo == nil {
+		return s.installFailure(ctx, actor, projectID, serverID, "encryption_unavailable", ErrEncryptionUnavailable)
+	}
+	task := Task{ID: uuid.NewString(), ServerID: serverID, ProjectID: projectID, Version: project.Versions[0], Actor: actor, Action: TaskActionAdopt}
+	plan, err := installer.BuildPlan(task, server, json.RawMessage(`{}`))
+	if err != nil {
+		return s.installFailure(ctx, actor, projectID, serverID, "adoption_failed", err)
+	}
+	sealed, err := s.cipher.Seal(TaskConfigScope, task.ID, []byte(`{}`))
+	if err != nil {
+		return s.installFailure(ctx, actor, projectID, serverID, "encryption_unavailable", ErrEncryptionUnavailable)
+	}
+	created, err := s.repo.CreateTask(ctx, task, sealed, plan)
+	if err != nil {
+		return s.installFailure(ctx, actor, projectID, serverID, "create_failed", err)
+	}
+	if err := s.auditRecord(ctx, actor, created, "deployment.adopt", "success"); err != nil {
+		return Task{}, err
+	}
+	if s.events != nil {
+		s.events.Wake(created.ID)
+	}
+	return created, nil
+}
+
 func (s *Service) GetTask(ctx context.Context, id string) (Task, []Step, error) {
 	task, err := s.repo.GetTask(ctx, id)
 	if err != nil {

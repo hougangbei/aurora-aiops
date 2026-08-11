@@ -72,7 +72,7 @@ func (i *KubernetesInstaller) NormalizeConfiguration(raw json.RawMessage) (json.
 }
 
 func (i *KubernetesInstaller) BuildPlan(task deployment.Task, server assets.Server, config json.RawMessage) ([]deployment.StepDefinition, error) {
-	if i == nil || task.ProjectID != kubernetesProjectID || task.Action != deployment.TaskActionInstall || task.Version != kubernetesVersion {
+	if i == nil || task.ProjectID != kubernetesProjectID || (task.Action != deployment.TaskActionInstall && task.Action != deployment.TaskActionAdopt) || task.Version != kubernetesVersion {
 		return nil, deployment.ErrUnsupportedTarget
 	}
 	if _, err := i.NormalizeConfiguration(config); err != nil {
@@ -88,6 +88,9 @@ func (i *KubernetesInstaller) BuildPlan(task deployment.Task, server assets.Serv
 	configYAML, err := kubeadmConfigYAML(server.Name)
 	if err != nil || configYAML == "" || containsForbiddenKubeadmCommand(commands) {
 		return nil, deployment.ErrUnsupportedTarget
+	}
+	if task.Action == deployment.TaskActionAdopt {
+		return i.buildAdoptionPlan(task, server), nil
 	}
 	steps := []deployment.StepDefinition{
 		{ID: "verify-access", Label: "校验 SSH、指纹和权限", Percent: 5, Timeout: 30 * time.Second},
@@ -173,6 +176,26 @@ func (i *KubernetesInstaller) BuildPlan(task deployment.Task, server assets.Serv
 		}
 	}
 	return steps, nil
+}
+
+func (i *KubernetesInstaller) buildAdoptionPlan(task deployment.Task, server assets.Server) []deployment.StepDefinition {
+	step := deployment.StepDefinition{ID: "inspect-existing-cluster", Label: "只读检查并接管现有集群", Percent: 100, Timeout: 10 * time.Minute}
+	step.Run = func(ctx context.Context, exec deployment.ExecutionContext) error {
+		for _, command := range []string{
+			kubeadmPrivilege(server, "test -s /etc/kubernetes/admin.conf"),
+			kubeadmPrivilege(server, "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get --raw=/readyz"),
+			kubeadmPrivilege(server, "KUBECONFIG=/etc/kubernetes/admin.conf kubectl version -o json"),
+			kubeadmPrivilege(server, "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes -o json"),
+			kubeadmPrivilege(server, "KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -n kube-system -o json"),
+		} {
+			result, err := exec.Run(ctx, command, 1<<20)
+			if err != nil || result.ExitCode != 0 {
+				return fmt.Errorf("existing cluster inspection failed")
+			}
+		}
+		return i.saveCluster(ctx, exec, task, server)
+	}
+	return []deployment.StepDefinition{step}
 }
 
 func (i *KubernetesInstaller) installCilium(ctx context.Context, exec deployment.ExecutionContext, server assets.Server) error {

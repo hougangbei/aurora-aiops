@@ -292,6 +292,25 @@ func mustServerTasks(t *testing.T, r *Repository, ctx context.Context, id string
 
 type testInstaller struct{ project Project }
 
+func TestRepositoryNotifierRunsAfterCommit(t *testing.T) {
+	ctx, db := context.Background(), openDeploymentDB(t)
+	seedDeploymentServer(t, db, "server-notify")
+	repo := NewRepository(db, time.Now)
+	ch := make(chan string, 1)
+	repo.SetEventNotifier(func(id string) { ch <- id })
+	if _, err := repo.CreateTask(ctx, testTask("task-notify", "server-notify"), sealedFor(t, "task-notify", `{}`), testSteps()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case id := <-ch:
+		if id != "task-notify" {
+			t.Fatalf("notified id=%q", id)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("repository did not notify after commit")
+	}
+}
+
 func (i testInstaller) Project() Project { return i.project }
 func (i testInstaller) NormalizeConfiguration(value json.RawMessage) (json.RawMessage, error) {
 	return value, nil

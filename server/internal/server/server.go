@@ -103,8 +103,14 @@ func Run(info buildinfo.Info) error {
 	}
 	deploymentRepo := deployment.NewRepository(db, time.Now)
 	deploymentEvents := deployment.NewEventStore(db)
+	deploymentRepo.SetEventNotifier(deploymentEvents.Wake)
 	deploymentCatalog := &deployment.Catalog{}
 	deploymentService := deployment.NewService(deploymentRepo, deploymentCatalog, deploymentCipher, assetService.Get, auditRepo, deploymentEvents, time.Now)
+	workerCipher := deploymentCipher
+	if workerCipher == nil {
+		workerCipher = unavailableDeploymentCipher{}
+	}
+	deploymentWorker := deployment.NewWorker(deploymentRepo, deploymentCatalog, workerCipher, unavailableDeploymentTargetProvider{}, deployment.WorkerOptions{Owner: "aurora-deployment-worker"})
 	snapshotStore := remediation.NewSnapshotStore(db)
 	executor := remediation.NewExecutor(
 		&remediation.KubeExecutorClient{Client: sharedClient.Kubernetes, RolloutTimeout: cfg.Cluster.Timeout},
@@ -142,7 +148,16 @@ func Run(info buildinfo.Info) error {
 		info,
 		deploymentService,
 	)
-	return router.Run(cfg.HTTPAddr)
+	workerCtx, stopWorker := context.WithCancel(context.Background())
+	workerDone := make(chan struct{})
+	go func() { _ = deploymentWorker.Start(workerCtx); close(workerDone) }()
+	runErr := router.Run(cfg.HTTPAddr)
+	stopWorker()
+	select {
+	case <-workerDone:
+	case <-time.After(2 * time.Second):
+	}
+	return runErr
 }
 
 func buildAssetService(db *sql.DB, encryptionKey []byte, remote assets.RemoteTransport, auditRepo audit.Repository, now func() time.Time) (*assets.Service, error) {

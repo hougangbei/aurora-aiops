@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"modernc.org/sqlite"
@@ -14,8 +15,10 @@ import (
 const repositoryTimeFormat = "2006-01-02T15:04:05.000000000Z07:00"
 
 type Repository struct {
-	db  *sql.DB
-	now func() time.Time
+	db       *sql.DB
+	now      func() time.Time
+	notifyMu sync.RWMutex
+	notify   func(string)
 }
 
 func NewRepository(db *sql.DB, now func() time.Time) *Repository {
@@ -23,6 +26,23 @@ func NewRepository(db *sql.DB, now func() time.Time) *Repository {
 		now = time.Now
 	}
 	return &Repository{db: db, now: now}
+}
+
+// SetEventNotifier installs a best-effort post-commit wake-up hook. SQLite
+// remains authoritative; callers must replay ListAfter after receiving it.
+func (r *Repository) SetEventNotifier(notify func(string)) {
+	r.notifyMu.Lock()
+	r.notify = notify
+	r.notifyMu.Unlock()
+}
+
+func (r *Repository) signal(taskID string) {
+	r.notifyMu.RLock()
+	notify := r.notify
+	r.notifyMu.RUnlock()
+	if notify != nil && taskID != "" {
+		notify(taskID)
+	}
 }
 
 func (r *Repository) CreateTask(ctx context.Context, task Task, sealed SealedSecret, definitions []StepDefinition) (Task, error) {
@@ -64,6 +84,7 @@ func (r *Repository) CreateTask(ctx context.Context, task Task, sealed SealedSec
 	if _, err := conn.ExecContext(ctx, `COMMIT`); err != nil {
 		return Task{}, fmt.Errorf("create task commit: %w", err)
 	}
+	r.signal(task.ID)
 	return task, nil
 }
 
@@ -187,6 +208,7 @@ func (r *Repository) ClaimNext(ctx context.Context, owner string, lease time.Dur
 	if _, err := conn.ExecContext(ctx, `COMMIT`); err != nil {
 		return Task{}, false, err
 	}
+	r.signal(id)
 	return task, true, nil
 }
 
@@ -297,6 +319,7 @@ func (r *Repository) RequestCancel(ctx context.Context, id string, event EventIn
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+	r.signal(id)
 	return nil
 }
 func (r *Repository) Finish(ctx context.Context, id string, status TaskStatus, code, message string, event EventInput) error {
@@ -370,6 +393,9 @@ func (r *Repository) RecoverExpired(ctx context.Context) (int64, error) {
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
+	}
+	for _, id := range ids {
+		r.signal(id)
 	}
 	return recovered, nil
 }
@@ -446,6 +472,7 @@ func (r *Repository) Retry(ctx context.Context, id, newID, actor string, definit
 	if err := tx.Commit(); err != nil {
 		return Task{}, err
 	}
+	r.signal(newID)
 	return task, nil
 }
 
@@ -465,7 +492,11 @@ func (r *Repository) taskTransition(ctx context.Context, id string, expected Tas
 	if err := appendEvent(ctx, tx, id, event, now); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	r.signal(id)
+	return nil
 }
 func (r *Repository) stepTransition(ctx context.Context, id, stepID string, change func(*sql.Tx, time.Time, Task) error, event EventInput) error {
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -493,7 +524,11 @@ func (r *Repository) stepTransition(ctx context.Context, id, stepID string, chan
 	if err := appendEvent(ctx, tx, id, event, now); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	r.signal(id)
+	return nil
 }
 func (r *Repository) fencedTaskTransition(ctx context.Context, id string, event EventInput, change func(*sql.Tx, time.Time, Task) error) error {
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -521,7 +556,11 @@ func (r *Repository) fencedTaskTransition(ctx context.Context, id string, event 
 	if err := appendEvent(ctx, tx, id, event, now); err != nil {
 		return err
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	r.signal(id)
+	return nil
 }
 func ensureLease(ctx context.Context, tx *sql.Tx, id, owner string, now time.Time) error {
 	if owner == "" {

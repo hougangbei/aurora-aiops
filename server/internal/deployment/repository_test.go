@@ -61,13 +61,13 @@ func TestRepositoryClaimsOldestAndEnforcesTransitions(t *testing.T) {
 	if err != nil || !ok || claimed.ID != "first" || claimed.Status != TaskRunning || claimed.StartedAt == nil {
 		t.Fatalf("ClaimNext=(%+v,%v,%v)", claimed, ok, err)
 	}
-	if err := repo.StartStep(ctx, "first", "download", "Download", EventInput{Type: "step-started"}); err != nil {
+	if err := repo.StartStep(ctx, "first", "download", "Download", workerEvent("step-started")); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.CompleteStep(ctx, "first", "download", false, 0, EventInput{Type: "step-completed"}); !errors.Is(err, ErrInvalidTransition) {
+	if err := repo.CompleteStep(ctx, "first", "download", false, 0, workerEvent("step-completed")); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("lower percent=%v", err)
 	}
-	if err := repo.CompleteStep(ctx, "first", "download", false, 50, EventInput{Type: "step-completed"}); err != nil {
+	if err := repo.CompleteStep(ctx, "first", "download", false, 50, workerEvent("step-completed")); err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.RequestCancel(ctx, "first", EventInput{Type: "cancel-requested"}); err != nil {
@@ -77,13 +77,13 @@ func TestRepositoryClaimsOldestAndEnforcesTransitions(t *testing.T) {
 	if got.Status != TaskRunning || !got.CancelRequested {
 		t.Fatalf("cancel changed state=%+v", got)
 	}
-	if err := repo.Finish(ctx, "first", TaskCancelled, "", "", EventInput{Type: "finished"}); err != nil {
+	if err := repo.Finish(ctx, "first", TaskCancelled, "", "", workerEvent("finished")); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.Finish(ctx, "first", TaskCancelled, "", "", EventInput{Type: "finished"}); !errors.Is(err, ErrInvalidTransition) {
+	if err := repo.Finish(ctx, "first", TaskCancelled, "", "", workerEvent("finished")); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("second finish=%v", err)
 	}
-	if err := repo.CompleteStep(ctx, "first", "install", false, 100, EventInput{Type: "step-completed"}); !errors.Is(err, ErrInvalidTransition) {
+	if err := repo.CompleteStep(ctx, "first", "install", false, 100, workerEvent("step-completed")); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("terminal complete=%v", err)
 	}
 }
@@ -119,16 +119,16 @@ func TestRepositoryRecoversRetriesAndResumesRegisteredValues(t *testing.T) {
 	if value, ok, err := repo.GetValue(ctx, "task-1", "archive"); err != nil || !ok || value != "artifact.tgz" {
 		t.Fatalf("GetValue=(%q,%v,%v)", value, ok, err)
 	}
-	if err := repo.StartStep(ctx, "task-1", "download", "Download", EventInput{Type: "step-started"}); !errors.Is(err, ErrInvalidTransition) {
+	if err := repo.StartStep(ctx, "task-1", "download", "Download", workerEvent("step-started")); !errors.Is(err, ErrInvalidTransition) {
 		t.Fatalf("start before claim=%v", err)
 	}
 	if _, ok, err := repo.ClaimNext(ctx, "worker", time.Minute); err != nil || !ok {
 		t.Fatalf("claim=%v,%v", ok, err)
 	}
-	if err := repo.StartStep(ctx, "task-1", "download", "Download", EventInput{Type: "step-started"}); err != nil {
+	if err := repo.StartStep(ctx, "task-1", "download", "Download", workerEvent("step-started")); err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.CompleteStep(ctx, "task-1", "download", false, 50, EventInput{Type: "step-completed"}); err != nil {
+	if err := repo.CompleteStep(ctx, "task-1", "download", false, 50, workerEvent("step-completed")); err != nil {
 		t.Fatal(err)
 	}
 	now = now.Add(2 * time.Minute)
@@ -145,7 +145,7 @@ func TestRepositoryRecoversRetriesAndResumesRegisteredValues(t *testing.T) {
 	if _, ok, err := repo.ClaimNext(ctx, "worker", time.Minute); err != nil || !ok {
 		t.Fatalf("reclaim=%v,%v", ok, err)
 	}
-	if err := repo.Finish(ctx, "task-1", TaskFailed, "failed", "reason", EventInput{Type: "finished"}); err != nil {
+	if err := repo.Finish(ctx, "task-1", TaskFailed, "failed", "reason", workerEvent("finished")); err != nil {
 		t.Fatal(err)
 	}
 	retry, err := repo.Retry(ctx, "task-1", "retry", "actor", nil)
@@ -171,6 +171,67 @@ func TestRepositoryOpenConfiguration(t *testing.T) {
 	got, err := repo.OpenTaskConfiguration(ctx, "task-1", cipher)
 	if err != nil || string(got) != `{"ok":true}` {
 		t.Fatalf("open=(%s,%v)", got, err)
+	}
+}
+
+func TestRepositoryFencesExpiredLeaseAndRestartsRunningStep(t *testing.T) {
+	ctx, db := context.Background(), openDeploymentDB(t)
+	seedDeploymentServer(t, db, "server-1")
+	now := time.Date(2026, 8, 11, 4, 0, 0, 0, time.UTC)
+	repo := NewRepository(db, func() time.Time { return now })
+	if _, err := repo.CreateTask(ctx, testTask("task-1", "server-1"), sealedFor(t, "task-1", `{}`), testSteps()); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := repo.ClaimNext(ctx, "old-worker", time.Minute); err != nil || !ok {
+		t.Fatalf("claim old=(%v,%v)", ok, err)
+	}
+	if err := repo.StartStep(ctx, "task-1", "download", "Download", EventInput{Type: "started", Owner: "old-worker"}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Minute)
+	if n, err := repo.RecoverExpired(ctx); err != nil || n != 1 {
+		t.Fatalf("recover=(%d,%v)", n, err)
+	}
+	steps := mustSteps(t, repo, ctx, "task-1")
+	if steps[0].Status != StepPending || steps[0].StartedAt != nil || steps[0].FinishedAt != nil || steps[0].ErrorMessage != "" {
+		t.Fatalf("recovered running step=%+v", steps[0])
+	}
+	if _, ok, err := repo.ClaimNext(ctx, "new-worker", time.Minute); err != nil || !ok {
+		t.Fatalf("claim new=(%v,%v)", ok, err)
+	}
+	if err := repo.StartStep(ctx, "task-1", "download", "Download", EventInput{Type: "started", Owner: "old-worker"}); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("old owner write=%v", err)
+	}
+	for name, err := range map[string]error{
+		"complete": repo.CompleteStep(ctx, "task-1", "download", false, 50, EventInput{Type: "completed", Owner: "old-worker"}),
+		"fail":     repo.FailStep(ctx, "task-1", "download", "no", EventInput{Type: "failed", Owner: "old-worker"}),
+		"finish":   repo.Finish(ctx, "task-1", TaskFailed, "no", "no", EventInput{Type: "finished", Owner: "old-worker"}),
+	} {
+		if !errors.Is(err, ErrLeaseLost) {
+			t.Fatalf("old owner %s=%v", name, err)
+		}
+	}
+	if err := repo.StartStep(ctx, "task-1", "download", "Download", EventInput{Type: "started", Owner: "new-worker"}); err != nil {
+		t.Fatalf("new owner restart=%v", err)
+	}
+}
+
+func TestRepositoryRequiresSequentialStepsAndCompletePlanForSuccess(t *testing.T) {
+	ctx, db := context.Background(), openDeploymentDB(t)
+	seedDeploymentServer(t, db, "server-1")
+	now := time.Date(2026, 8, 11, 5, 0, 0, 0, time.UTC)
+	repo := NewRepository(db, func() time.Time { return now })
+	if _, err := repo.CreateTask(ctx, testTask("task-1", "server-1"), sealedFor(t, "task-1", `{}`), testSteps()); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := repo.ClaimNext(ctx, "worker", time.Minute); err != nil || !ok {
+		t.Fatalf("claim=(%v,%v)", ok, err)
+	}
+	if err := repo.StartStep(ctx, "task-1", "install", "Install", workerEvent("started")); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("out of order=%v", err)
+	}
+	if err := repo.Finish(ctx, "task-1", TaskSucceeded, "", "", workerEvent("finished")); !errors.Is(err, ErrInvalidTransition) {
+		t.Fatalf("early success=%v", err)
 	}
 }
 
@@ -210,7 +271,8 @@ func sealedFor(t *testing.T, id, value string) SealedSecret {
 	}
 	return sealed
 }
-func bytes32() []byte { return []byte(strings.Repeat("k", 32)) }
+func bytes32() []byte                    { return []byte(strings.Repeat("k", 32)) }
+func workerEvent(kind string) EventInput { return EventInput{Type: kind, Owner: "worker"} }
 func mustSteps(t *testing.T, r *Repository, ctx context.Context, id string) []Step {
 	t.Helper()
 	value, err := r.ListSteps(ctx, id)

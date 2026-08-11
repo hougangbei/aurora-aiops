@@ -81,6 +81,8 @@ type Step struct {
 type EventInput struct {
 	Type    string
 	Payload json.RawMessage
+	// Owner is the worker identity returned by ClaimNext. It fences worker-only transitions.
+	Owner string
 }
 
 type SealedSecret struct {

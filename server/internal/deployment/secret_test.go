@@ -23,6 +23,9 @@ func TestSecretCipherAuthenticatesTaskConfig(t *testing.T) {
 	if _, err := cipher.Open(TaskConfigScope, "task-2", sealed); err == nil {
 		t.Fatal("wrong task ID opened secret")
 	}
+	if _, err := cipher.Open("wrong-scope", "task-1", sealed); err == nil {
+		t.Fatal("wrong scope opened secret")
+	}
 	sealed.Ciphertext[0] ^= 1
 	if _, err := cipher.Open(TaskConfigScope, "task-1", sealed); err == nil {
 		t.Fatal("tampered secret opened")

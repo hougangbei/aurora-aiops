@@ -207,7 +207,14 @@ func (r *Repository) RenewLease(ctx context.Context, id, owner string, lease tim
 }
 func (r *Repository) StartStep(ctx context.Context, taskID, stepID, label string, event EventInput) error {
 	return r.stepTransition(ctx, taskID, stepID, func(tx *sql.Tx, now time.Time, task Task) error {
-		res, err := tx.ExecContext(ctx, `UPDATE deployment_steps SET status=?,started_at=? WHERE task_id=? AND step_id=? AND status=?`, StepRunning, formatTime(now), taskID, stepID, StepPending)
+		var earlier int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM deployment_steps WHERE task_id=? AND ordinal < (SELECT ordinal FROM deployment_steps WHERE task_id=? AND step_id=?) AND status NOT IN (?, ?)`, taskID, taskID, stepID, StepSucceeded, StepSkipped).Scan(&earlier); err != nil {
+			return err
+		}
+		if earlier != 0 {
+			return ErrInvalidTransition
+		}
+		res, err := tx.ExecContext(ctx, `UPDATE deployment_steps SET status=?,started_at=? WHERE task_id=? AND step_id=? AND status=? AND EXISTS (SELECT 1 FROM deployment_tasks WHERE id=? AND status=? AND lease_owner=? AND lease_expires_at>?)`, StepRunning, formatTime(now), taskID, stepID, StepPending, taskID, TaskRunning, event.Owner, formatTime(now))
 		if err != nil {
 			return err
 		}
@@ -215,7 +222,7 @@ func (r *Repository) StartStep(ctx context.Context, taskID, stepID, label string
 		if n != 1 {
 			return ErrInvalidTransition
 		}
-		_, err = tx.ExecContext(ctx, `UPDATE deployment_tasks SET current_step_id=?,current_step_label=?,updated_at=? WHERE id=? AND status=?`, stepID, label, formatTime(now), taskID, TaskRunning)
+		_, err = tx.ExecContext(ctx, `UPDATE deployment_tasks SET current_step_id=?,current_step_label=?,updated_at=? WHERE id=? AND status=? AND lease_owner=? AND lease_expires_at>?`, stepID, label, formatTime(now), taskID, TaskRunning, event.Owner, formatTime(now))
 		return err
 	}, event)
 }
@@ -228,7 +235,7 @@ func (r *Repository) CompleteStep(ctx context.Context, taskID, stepID string, sk
 		if skipped {
 			status = StepSkipped
 		}
-		res, err := tx.ExecContext(ctx, `UPDATE deployment_steps SET status=?,finished_at=? WHERE task_id=? AND step_id=? AND status=? AND percent=?`, status, formatTime(now), taskID, stepID, StepRunning, percent)
+		res, err := tx.ExecContext(ctx, `UPDATE deployment_steps SET status=?,finished_at=? WHERE task_id=? AND step_id=? AND status=? AND percent=? AND EXISTS (SELECT 1 FROM deployment_tasks WHERE id=? AND status=? AND lease_owner=? AND lease_expires_at>?)`, status, formatTime(now), taskID, stepID, StepRunning, percent, taskID, TaskRunning, event.Owner, formatTime(now))
 		if err != nil {
 			return err
 		}
@@ -236,7 +243,7 @@ func (r *Repository) CompleteStep(ctx context.Context, taskID, stepID string, sk
 		if n != 1 {
 			return ErrInvalidTransition
 		}
-		res, err = tx.ExecContext(ctx, `UPDATE deployment_tasks SET percent=?,updated_at=? WHERE id=? AND status=? AND percent<?`, percent, formatTime(now), taskID, TaskRunning, percent)
+		res, err = tx.ExecContext(ctx, `UPDATE deployment_tasks SET percent=?,updated_at=? WHERE id=? AND status=? AND percent<? AND lease_owner=? AND lease_expires_at>?`, percent, formatTime(now), taskID, TaskRunning, percent, event.Owner, formatTime(now))
 		if err != nil {
 			return err
 		}
@@ -249,7 +256,7 @@ func (r *Repository) CompleteStep(ctx context.Context, taskID, stepID string, sk
 }
 func (r *Repository) FailStep(ctx context.Context, taskID, stepID, message string, event EventInput) error {
 	return r.stepTransition(ctx, taskID, stepID, func(tx *sql.Tx, now time.Time, task Task) error {
-		res, err := tx.ExecContext(ctx, `UPDATE deployment_steps SET status=?,finished_at=?,error_message=? WHERE task_id=? AND step_id=? AND status=?`, StepFailed, formatTime(now), message, taskID, stepID, StepRunning)
+		res, err := tx.ExecContext(ctx, `UPDATE deployment_steps SET status=?,finished_at=?,error_message=? WHERE task_id=? AND step_id=? AND status=? AND EXISTS (SELECT 1 FROM deployment_tasks WHERE id=? AND status=? AND lease_owner=? AND lease_expires_at>?)`, StepFailed, formatTime(now), message, taskID, stepID, StepRunning, taskID, TaskRunning, event.Owner, formatTime(now))
 		if err != nil {
 			return err
 		}
@@ -277,8 +284,20 @@ func (r *Repository) Finish(ctx context.Context, id string, status TaskStatus, c
 	if !terminal(status) {
 		return ErrInvalidInput
 	}
-	return r.taskTransition(ctx, id, TaskRunning, func(tx *sql.Tx, now time.Time) error {
-		res, err := tx.ExecContext(ctx, `UPDATE deployment_tasks SET status=?,error_code=?,error_message=?,finished_at=?,lease_owner='',lease_expires_at='',updated_at=? WHERE id=? AND status=?`, status, code, message, formatTime(now), formatTime(now), id, TaskRunning)
+	return r.fencedTaskTransition(ctx, id, event, func(tx *sql.Tx, now time.Time, task Task) error {
+		if status == TaskSucceeded {
+			if task.Percent != 100 {
+				return ErrInvalidTransition
+			}
+			var incomplete int
+			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM deployment_steps WHERE task_id=? AND status NOT IN (?, ?)`, id, StepSucceeded, StepSkipped).Scan(&incomplete); err != nil {
+				return err
+			}
+			if incomplete != 0 {
+				return ErrInvalidTransition
+			}
+		}
+		res, err := tx.ExecContext(ctx, `UPDATE deployment_tasks SET status=?,error_code=?,error_message=?,finished_at=?,lease_owner='',lease_expires_at='',updated_at=? WHERE id=? AND status=? AND lease_owner=? AND lease_expires_at>?`, status, code, message, formatTime(now), formatTime(now), id, TaskRunning, event.Owner, formatTime(now))
 		if err != nil {
 			return err
 		}
@@ -287,7 +306,7 @@ func (r *Repository) Finish(ctx context.Context, id string, status TaskStatus, c
 			return ErrInvalidTransition
 		}
 		return nil
-	}, event)
+	})
 }
 
 func (r *Repository) RecoverExpired(ctx context.Context) (int64, error) {
@@ -313,6 +332,7 @@ func (r *Repository) RecoverExpired(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	rows.Close()
+	var recovered int64
 	for _, id := range ids {
 		res, err := tx.ExecContext(ctx, `UPDATE deployment_tasks SET status=?,lease_owner='',lease_expires_at='',current_step_id='',current_step_label='',updated_at=? WHERE id=? AND status=? AND lease_expires_at<>'' AND lease_expires_at<?`, TaskQueued, formatTime(now), id, TaskRunning, formatTime(now))
 		if err != nil {
@@ -320,15 +340,19 @@ func (r *Repository) RecoverExpired(ctx context.Context) (int64, error) {
 		}
 		n, _ := res.RowsAffected()
 		if n == 1 {
+			if _, err := tx.ExecContext(ctx, `UPDATE deployment_steps SET status=?,started_at='',finished_at='',error_message='' WHERE task_id=? AND status=?`, StepPending, id, StepRunning); err != nil {
+				return 0, err
+			}
 			if err := appendEvent(ctx, tx, id, EventInput{Type: "requeued"}, now); err != nil {
 				return 0, err
 			}
+			recovered++
 		}
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
-	return int64(len(ids)), nil
+	return recovered, nil
 }
 
 func (r *Repository) Retry(ctx context.Context, id, newID, actor string, _ []StepDefinition) (Task, error) {
@@ -424,6 +448,9 @@ func (r *Repository) stepTransition(ctx context.Context, id, stepID string, chan
 		return ErrInvalidTransition
 	}
 	now := r.now()
+	if err := ensureLease(ctx, tx, id, event.Owner, now); err != nil {
+		return err
+	}
 	if err := change(tx, now, task); err != nil {
 		return err
 	}
@@ -431,6 +458,48 @@ func (r *Repository) stepTransition(ctx context.Context, id, stepID string, chan
 		return err
 	}
 	return tx.Commit()
+}
+func (r *Repository) fencedTaskTransition(ctx context.Context, id string, event EventInput, change func(*sql.Tx, time.Time, Task) error) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	task, err := queryTask(ctx, tx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if task.Status != TaskRunning {
+		return ErrInvalidTransition
+	}
+	now := r.now()
+	if err := ensureLease(ctx, tx, id, event.Owner, now); err != nil {
+		return err
+	}
+	if err := change(tx, now, task); err != nil {
+		return err
+	}
+	if err := appendEvent(ctx, tx, id, event, now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+func ensureLease(ctx context.Context, tx *sql.Tx, id, owner string, now time.Time) error {
+	if owner == "" {
+		return ErrLeaseLost
+	}
+	var exists int
+	err := tx.QueryRowContext(ctx, `SELECT 1 FROM deployment_tasks WHERE id=? AND status=? AND lease_owner=? AND lease_expires_at>?`, id, TaskRunning, owner, formatTime(now)).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrLeaseLost
+	}
+	if err != nil {
+		return err
+	}
+	return nil
 }
 func ensureStatus(ctx context.Context, tx *sql.Tx, id string, expected TaskStatus) error {
 	var status TaskStatus

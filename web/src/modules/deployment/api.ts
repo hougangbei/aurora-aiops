@@ -6,7 +6,6 @@ type Envelope<T> = { code: string; message?: string; data: T };
 function unwrap<T>(response: { data: Envelope<T> }): T {
   return response.data.data;
 }
-
 const taskPath = (id: string) => `/deployment-tasks/${encodeURIComponent(id)}`;
 const serverPath = (id: string) => `/assets/servers/${encodeURIComponent(id)}`;
 
@@ -33,4 +32,3 @@ export async function retryDeploymentTask(id: string): Promise<DeploymentTask> {
 export function deploymentEventsUrl(id: string, lastEventId: number): string {
   return `${taskPath(id)}/events?lastEventId=${Math.max(0, Math.floor(lastEventId))}`;
 }
-

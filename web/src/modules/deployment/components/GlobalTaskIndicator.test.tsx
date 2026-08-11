@@ -19,4 +19,3 @@ describe('GlobalTaskIndicator', () => {
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 });
-

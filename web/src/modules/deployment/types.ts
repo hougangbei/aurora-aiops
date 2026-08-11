@@ -42,4 +42,3 @@ export type DeploymentEvent = {
   type?: string;
   data: unknown;
 };
-

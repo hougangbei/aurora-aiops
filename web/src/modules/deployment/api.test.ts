@@ -47,4 +47,3 @@ describe('deployment api client', () => {
     expect(postMock).toHaveBeenNthCalledWith(2, '/deployment-tasks/task%2F1/retry');
   });
 });
-

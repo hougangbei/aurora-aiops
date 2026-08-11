@@ -15,4 +15,3 @@ export function GlobalTaskIndicator({ tasks }: { tasks: DeploymentTask[] }) {
     </Badge>
   );
 }
-

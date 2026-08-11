@@ -1,6 +1,6 @@
 # Phase-2 部署任务与进度验收记录
 
-**验收日期：** 2026-08-11  
+**验收日期：** 2026-08-11
 **范围：** durable deployment task schema/repository、租约恢复、事件持久化与 SSE、脱敏日志、worker 状态机、任务 API/RBAC、前端进度恢复/轮询降级，以及可安装 release 资产契约。本文不把占位目标适配器或 loopback 测试推断为真实主机安装验收。
 
 ## 已验证范围与明确限制

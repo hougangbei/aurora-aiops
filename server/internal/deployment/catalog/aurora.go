@@ -115,9 +115,8 @@ func (i *AuroraInstaller) BuildPlan(task deployment.Task, server assets.Server, 
 					return err
 				}
 				for _, cmd := range commands {
-					result, runErr := exec.Run(ctx, cmd, 4096)
-					if runErr != nil || result.ExitCode != 0 {
-						return safeInstallerError(runErr)
+					if err := runChecked(ctx, exec, cmd, 4096); err != nil {
+						return err
 					}
 				}
 				return nil
@@ -249,36 +248,35 @@ func activationRun(server assets.Server, task deployment.Task, staging string) f
 		if err != nil {
 			return err
 		}
-		if _, err = exec.Run(ctx, cmd, 1024); err != nil {
-			return safeInstallerError(err)
+		if err := runChecked(ctx, exec, cmd, 1024); err != nil {
+			return err
 		}
 		cmd, err = commandListArchive(server, staging)
 		if err != nil {
 			return err
 		}
-		if _, err = exec.Run(ctx, cmd, 16<<10); err != nil {
-			return safeInstallerError(err)
+		if err := runChecked(ctx, exec, cmd, 16<<10); err != nil {
+			return err
 		}
 		cmd, err = commandExtractArchive(server, staging, release)
 		if err != nil {
 			return err
 		}
-		if _, err = exec.Run(ctx, cmd, 16<<10); err != nil {
-			return safeInstallerError(err)
+		if err := runChecked(ctx, exec, cmd, 16<<10); err != nil {
+			return err
 		}
 		cmd, err = commandAtomicLink(server, release)
 		if err != nil {
 			return err
 		}
-		if _, err = exec.Run(ctx, cmd, 1024); err != nil {
-			return safeInstallerError(err)
+		if err := runChecked(ctx, exec, cmd, 1024); err != nil {
+			return err
 		}
 		cmd, err = commandAtomicActivate(server)
 		if err != nil {
 			return err
 		}
-		_, err = exec.Run(ctx, cmd, 1024)
-		return safeInstallerError(err)
+		return runChecked(ctx, exec, cmd, 1024)
 	}
 }
 
@@ -288,17 +286,20 @@ func configureRun(server assets.Server, task deployment.Task, cfg auroraConfigur
 		if err != nil {
 			return err
 		}
-		if _, err := exec.Run(ctx, cmd, 1024); err != nil { // user may already exist; probe is authoritative on retries.
+		if result, runErr := exec.Run(ctx, cmd, 1024); runErr != nil || result.ExitCode != 0 { // user may already exist; probe is authoritative on retries.
 			if result, probeErr := exec.Run(ctx, "id -u aurora-aiops", 1024); probeErr != nil || result.ExitCode != 0 {
-				return safeInstallerError(err)
+				if runErr != nil {
+					return safeInstallerError(runErr)
+				}
+				return fmt.Errorf("remote installer operation failed")
 			}
 		}
 		cmd, err = commandKubeconfig(server)
 		if err != nil {
 			return err
 		}
-		if _, err = exec.Run(ctx, cmd, 2048); err != nil {
-			return safeInstallerError(err)
+		if err := runChecked(ctx, exec, cmd, 2048); err != nil {
+			return err
 		}
 		envPath, err := envStagingPath(task.ID)
 		if err != nil {
@@ -315,8 +316,8 @@ func configureRun(server assets.Server, task deployment.Task, cfg auroraConfigur
 		if err != nil {
 			return err
 		}
-		if _, err = exec.Run(ctx, cmd, 2048); err != nil {
-			return safeInstallerError(err)
+		if err := runChecked(ctx, exec, cmd, 2048); err != nil {
+			return err
 		}
 		release, err := releasePath(task.Version)
 		if err != nil {
@@ -326,8 +327,8 @@ func configureRun(server assets.Server, task deployment.Task, cfg auroraConfigur
 		if err != nil {
 			return err
 		}
-		if _, err = exec.Run(ctx, cmd, 2048); err != nil {
-			return safeInstallerError(err)
+		if err := runChecked(ctx, exec, cmd, 2048); err != nil {
+			return err
 		}
 		return exec.SetValue(valueEnvStaging, envPath)
 	}
@@ -369,15 +370,15 @@ func restartRun(server assets.Server, task deployment.Task, cfg auroraConfigurat
 		if err != nil {
 			return err
 		}
-		if _, err := exec.Run(ctx, cmd, 1024); err != nil {
-			return safeInstallerError(err)
+		if err := runChecked(ctx, exec, cmd, 1024); err != nil {
+			return err
 		}
 		cmd, err = commandRestart(server)
 		if err != nil {
 			return err
 		}
-		if _, err = exec.Run(ctx, cmd, 1024); err != nil {
-			return safeInstallerError(err)
+		if err := runChecked(ctx, exec, cmd, 1024); err != nil {
+			return err
 		}
 		// The first start consumes bootstrap credentials. Replace the file before
 		// restarting again so credentials do not remain on the target.
@@ -396,15 +397,14 @@ func restartRun(server assets.Server, task deployment.Task, cfg auroraConfigurat
 		if err != nil {
 			return err
 		}
-		if _, err = exec.Run(ctx, cmd, 2048); err != nil {
-			return safeInstallerError(err)
+		if err := runChecked(ctx, exec, cmd, 2048); err != nil {
+			return err
 		}
 		cmd, err = commandRestart(server)
 		if err != nil {
 			return err
 		}
-		_, err = exec.Run(ctx, cmd, 1024)
-		return safeInstallerError(err)
+		return runChecked(ctx, exec, cmd, 1024)
 	}
 }
 
@@ -425,8 +425,7 @@ func runCommand(command func() (string, error)) func(context.Context, deployment
 		if err != nil {
 			return err
 		}
-		_, err = exec.Run(ctx, cmd, 4096)
-		return safeInstallerError(err)
+		return runChecked(ctx, exec, cmd, 4096)
 	}
 }
 func safeInstallerError(err error) error {
@@ -434,6 +433,17 @@ func safeInstallerError(err error) error {
 		return nil
 	}
 	return fmt.Errorf("remote installer operation failed")
+}
+
+func runChecked(ctx context.Context, exec deployment.ExecutionContext, command string, limit int64) error {
+	result, err := exec.Run(ctx, command, limit)
+	if err != nil {
+		return safeInstallerError(err)
+	}
+	if result.ExitCode != 0 {
+		return fmt.Errorf("remote installer operation failed")
+	}
+	return nil
 }
 func containsString(values []string, value string) bool {
 	for _, item := range values {

@@ -240,6 +240,43 @@ func TestWorkerCancelsDuringCommand(t *testing.T) {
 	}
 }
 
+func TestWorkerRecoversExpiredClaimAndResumes(t *testing.T) {
+	ctx, db := context.Background(), openDeploymentDB(t)
+	seedDeploymentServer(t, db, "server-1")
+	now := time.Date(2026, 8, 11, 6, 0, 0, 0, time.UTC)
+	repo := NewRepository(db, func() time.Time { return now })
+	cipher, _ := NewSecretCipher(bytes32())
+	inst := &workerTestInstaller{project: Project{ID: "project", Versions: []string{"1"}, SupportedArchitectures: []string{"amd64"}}, steps: []StepDefinition{
+		{ID: "one", Label: "One", Percent: 50, Run: func(ctx context.Context, e ExecutionContext) error { _, err := e.Run(ctx, "one", 1); return err }},
+		{ID: "two", Label: "Two", Percent: 100, Run: func(ctx context.Context, e ExecutionContext) error { _, err := e.Run(ctx, "two", 1); return err }},
+	}}
+	var catalog Catalog
+	_ = catalog.Register(inst)
+	provider := &workerTestProvider{server: assets.Server{ID: "server-1", Architecture: "amd64"}}
+	if _, err := repo.CreateTask(ctx, testTask("task-1", "server-1"), sealedFor(t, "task-1", `{}`), inst.steps); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := repo.ClaimNext(ctx, "crashed-worker", time.Minute); err != nil || !ok {
+		t.Fatalf("claim=%v,%v", ok, err)
+	}
+	if err := repo.StartStep(ctx, "task-1", "one", "One", EventInput{Type: "step_started", Owner: "crashed-worker"}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Minute)
+	w := NewWorker(repo, &catalog, cipher, provider, WorkerOptions{Owner: "new-worker", Lease: time.Minute})
+	if _, err := w.RunOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	task, _ := repo.GetTask(ctx, "task-1")
+	if task.Status != TaskSucceeded || task.Percent != 100 {
+		t.Fatalf("recovered task=%+v", task)
+	}
+	steps, _ := repo.ListSteps(ctx, "task-1")
+	if steps[0].Status != StepSucceeded || steps[1].Status != StepSucceeded {
+		t.Fatalf("steps=%+v", steps)
+	}
+}
+
 func mustTask(t *testing.T, r *Repository, ctx context.Context, id string) Task {
 	t.Helper()
 	v, err := r.GetTask(ctx, id)

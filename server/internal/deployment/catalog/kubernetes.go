@@ -97,8 +97,8 @@ func (i *KubernetesInstaller) BuildPlan(task deployment.Task, server assets.Serv
 				return err
 			}
 			groups := map[int][]string{
-				2: commands[0:7], 3: commands[7:9], 4: commands[9:12],
-				5: commands[12:13], 6: commands[13:15], 7: commands[15:16], 8: commands[16:18], 9: []string{"test -s /etc/kubernetes/admin.conf"},
+				2: commands[0:7], 3: commands[7:9], 4: commands[9:14],
+				5: commands[14:16], 6: commands[16:18], 7: commands[18:19], 8: commands[19:20], 9: []string{"test -s /etc/kubernetes/admin.conf"},
 			}
 			return runKubeadmCommands(ctx, exec, groups[stepIndex])
 		}

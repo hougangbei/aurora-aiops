@@ -419,5 +419,22 @@ CREATE TABLE IF NOT EXISTS deployment_task_values (
 		return err
 	}
 
+	_, err = tx.Exec(`
+CREATE TABLE IF NOT EXISTS deployment_secrets (
+  id TEXT PRIMARY KEY,
+  server_id TEXT NOT NULL REFERENCES asset_servers(id) ON DELETE CASCADE,
+  project_id TEXT NOT NULL,
+  secret_kind TEXT NOT NULL CHECK (secret_kind IN ('kubeconfig')),
+  nonce BLOB NOT NULL,
+  ciphertext BLOB NOT NULL,
+  key_version INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(server_id, project_id, secret_kind)
+)`)
+	if err != nil {
+		return err
+	}
+
 	return tx.Commit()
 }

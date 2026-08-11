@@ -142,6 +142,65 @@ func (r *Repository) OpenTaskConfiguration(ctx context.Context, id string, ciphe
 	return json.RawMessage(value), nil
 }
 
+// PutSecret atomically replaces the encrypted envelope for a managed resource.
+// Plaintext never enters the repository or its public projections.
+func (r *Repository) PutSecret(ctx context.Context, serverID, projectID, kind string, sealed SealedSecret) error {
+	if err := validateResourceSecret(serverID, projectID, kind, sealed); err != nil {
+		return err
+	}
+	now := formatTime(r.now())
+	// The deterministic ID keeps retries idempotent while the UNIQUE constraint
+	// remains the authoritative guard for alternate callers.
+	id := serverID + "\x00" + projectID + "\x00" + kind
+	_, err := r.db.ExecContext(ctx, `INSERT INTO deployment_secrets (id,server_id,project_id,secret_kind,nonce,ciphertext,key_version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(server_id,project_id,secret_kind) DO UPDATE SET nonce=excluded.nonce,ciphertext=excluded.ciphertext,key_version=excluded.key_version,updated_at=excluded.updated_at`, id, serverID, projectID, kind, sealed.Nonce, sealed.Ciphertext, sealed.KeyVersion, now, now)
+	if err != nil {
+		return fmt.Errorf("put deployment secret: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) HasSecret(ctx context.Context, serverID, projectID, kind string) (bool, error) {
+	if serverID == "" || projectID == "" || kind == "" {
+		return false, ErrInvalidInput
+	}
+	var exists int
+	err := r.db.QueryRowContext(ctx, `SELECT 1 FROM deployment_secrets WHERE server_id=? AND project_id=? AND secret_kind=? LIMIT 1`, serverID, projectID, kind).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("check deployment secret: %w", err)
+	}
+	return exists == 1, nil
+}
+
+// OpenSecret is intentionally internal to the deployment package. HTTP routes
+// use HasSecret and installation summaries instead of returning its bytes.
+func (r *Repository) OpenSecret(ctx context.Context, serverID, projectID, kind string, cipher SecretCipher) ([]byte, error) {
+	if cipher == nil {
+		return nil, ErrEncryptionUnavailable
+	}
+	if serverID == "" || projectID == "" || kind == "" {
+		return nil, ErrInvalidInput
+	}
+	var sealed SealedSecret
+	err := r.db.QueryRowContext(ctx, `SELECT nonce,ciphertext,key_version FROM deployment_secrets WHERE server_id=? AND project_id=? AND secret_kind=?`, serverID, projectID, kind).Scan(&sealed.Nonce, &sealed.Ciphertext, &sealed.KeyVersion)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read deployment secret: %w", err)
+	}
+	return cipher.OpenResource(kind, serverID, projectID, sealed)
+}
+
+func validateResourceSecret(serverID, projectID, kind string, sealed SealedSecret) error {
+	if serverID == "" || projectID == "" || kind == "" || kind != "kubeconfig" || sealed.KeyVersion != secretKeyVersion || len(sealed.Nonce) == 0 || len(sealed.Ciphertext) == 0 {
+		return ErrInvalidInput
+	}
+	return nil
+}
+
 func (r *Repository) PutValue(ctx context.Context, taskID, key, value string) error {
 	if key == "" {
 		return ErrInvalidInput

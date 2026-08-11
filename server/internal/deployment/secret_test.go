@@ -2,6 +2,7 @@ package deployment
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"testing"
 )
@@ -48,5 +49,48 @@ func TestSecretCipherRejectsInvalidKeyAndEnvelope(t *testing.T) {
 	}
 	if _, err := cipher.Open(TaskConfigScope, "task", SealedSecret{KeyVersion: 1, Nonce: []byte{1}, Ciphertext: []byte{2}}); err == nil {
 		t.Fatal("invalid envelope opened")
+	}
+}
+
+func TestSecretCipherAuthenticatesResourceIdentity(t *testing.T) {
+	cipher, err := NewSecretCipher(bytes.Repeat([]byte{4}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain := []byte("apiVersion: v1\nclusters: []\n")
+	sealed, err := cipher.SealResource("kubeconfig", "server-1", "kubernetes", plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := cipher.OpenResource("kubeconfig", "server-1", "kubernetes", sealed); err != nil || !bytes.Equal(got, plain) {
+		t.Fatalf("OpenResource=(%q,%v)", got, err)
+	}
+	for _, tc := range []struct {
+		name, kind, server, project string
+	}{
+		{"kind", "token", "server-1", "kubernetes"},
+		{"server", "kubeconfig", "server-2", "kubernetes"},
+		{"project", "kubeconfig", "server-1", "other"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := cipher.OpenResource(tc.kind, tc.server, tc.project, sealed); err == nil {
+				t.Fatal("resource with wrong associated identity opened")
+			}
+		})
+	}
+	if bytes.Contains(sealed.Ciphertext, plain) || bytes.Contains(sealed.Ciphertext, []byte(base64.StdEncoding.EncodeToString(plain))) {
+		t.Fatal("resource envelope contains plaintext")
+	}
+}
+
+func TestSecretCipherRejectsInvalidResourceIdentity(t *testing.T) {
+	cipher, err := NewSecretCipher(bytes.Repeat([]byte{4}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range [][3]string{{"", "server", "project"}, {"kubeconfig", "", "project"}, {"kubeconfig", "server", ""}} {
+		if _, err := cipher.SealResource(tc[0], tc[1], tc[2], []byte("secret")); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("SealResource(%q,%q,%q)=%v", tc[0], tc[1], tc[2], err)
+		}
 	}
 }

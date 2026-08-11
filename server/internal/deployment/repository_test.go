@@ -174,6 +174,36 @@ func TestRepositoryOpenConfiguration(t *testing.T) {
 	}
 }
 
+func TestRepositoryStoresAndOpensResourceSecretWithoutEnvelopeProjection(t *testing.T) {
+	ctx, db := context.Background(), openDeploymentDB(t)
+	seedDeploymentServer(t, db, "server-1")
+	repo := NewRepository(db, time.Now)
+	cipher, err := NewSecretCipher(bytes32())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := cipher.SealResource("kubeconfig", "server-1", "kubernetes", []byte("apiVersion: v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.PutSecret(ctx, "server-1", "kubernetes", "kubeconfig", sealed); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := repo.HasSecret(ctx, "server-1", "kubernetes", "kubeconfig"); err != nil || !ok {
+		t.Fatalf("HasSecret=(%v,%v)", ok, err)
+	}
+	got, err := repo.OpenSecret(ctx, "server-1", "kubernetes", "kubeconfig", cipher)
+	if err != nil || string(got) != "apiVersion: v1" {
+		t.Fatalf("OpenSecret=(%q,%v)", got, err)
+	}
+	if err := repo.PutSecret(ctx, "server-1", "kubernetes", "kubeconfig", sealed); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := repo.HasSecret(ctx, "server-1", "other", "kubeconfig"); err != nil || ok {
+		t.Fatalf("missing secret=(%v,%v)", ok, err)
+	}
+}
+
 func TestRepositoryFencesExpiredLeaseAndRestartsRunningStep(t *testing.T) {
 	ctx, db := context.Background(), openDeploymentDB(t)
 	seedDeploymentServer(t, db, "server-1")

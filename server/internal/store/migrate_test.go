@@ -89,6 +89,7 @@ func TestOpenCreatesDeploymentSchema(t *testing.T) {
 		"deployment_steps",
 		"deployment_events",
 		"deployment_task_values",
+		"deployment_secrets",
 	} {
 		var name string
 		if err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, want).Scan(&name); err != nil {
@@ -339,5 +340,36 @@ func assertExecFails(t *testing.T, db *sql.DB, query string) {
 	t.Helper()
 	if _, err := db.Exec(query); err == nil {
 		t.Fatalf("expected query to fail: %s", query)
+	}
+}
+
+func TestDeploymentSecretsSchemaContract(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "secrets.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var sqlText string
+	if err := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='deployment_secrets'`).Scan(&sqlText); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.ToLower(sqlText), "plaintext") || strings.Contains(strings.ToLower(sqlText), "secret_text") {
+		t.Fatalf("plaintext column in schema: %s", sqlText)
+	}
+	if !strings.Contains(sqlText, "UNIQUE(server_id, project_id, secret_kind)") {
+		t.Fatalf("missing resource uniqueness: %s", sqlText)
+	}
+	if _, err := db.Exec(`INSERT INTO asset_credentials (id, auth_type, nonce, ciphertext, created_at, updated_at) VALUES ('cred-secret', 'password', x'01', x'02', 'now', 'now')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO asset_servers (id, name, address, ssh_port, username, credential_id, status, created_at, updated_at) VALUES ('server-secret', 'server-secret', '192.0.2.2', 22, 'root', 'cred-secret', 'online', 'now', 'now')`); err != nil {
+		t.Fatal(err)
+	}
+	insert := `INSERT INTO deployment_secrets (id, server_id, project_id, secret_kind, nonce, ciphertext, created_at, updated_at) VALUES (?, ?, ?, ?, x'01', x'02', 'now', 'now')`
+	if _, err := db.Exec(insert, "secret-1", "server-secret", "kubernetes", "kubeconfig"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(insert, "secret-2", "server-secret", "kubernetes", "kubeconfig"); err == nil {
+		t.Fatal("duplicate resource secret unexpectedly accepted")
 	}
 }

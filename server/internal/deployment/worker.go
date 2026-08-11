@@ -113,9 +113,13 @@ func (w *Worker) executeClaimed(ctx context.Context, task Task) error {
 	// Keep installer output redacted even when a provider forwards Log calls to
 	// an audit sink. Credentials never cross this wrapper in plaintext.
 	execCtx = &redactingExecutionContext{ExecutionContext: execCtx, logger: logger}
-	plan, err := installer.BuildPlan(task, server, config)
+	plan, err := callBuildPlan(installer, task, server, config)
 	if err != nil {
-		return w.failTask(ctx, task, "PLAN_FAILED", safeMessage(logger, err))
+		code := "PLAN_FAILED"
+		if isInstallerPanic(err) {
+			code = "INSTALLER_PANIC"
+		}
+		return w.failTask(ctx, task, code, safeMessage(logger, err))
 	}
 	if err := validateWorkerPlan(plan); err != nil {
 		return w.failTask(ctx, task, "PLAN_FAILED", err.Error())
@@ -281,6 +285,15 @@ func callRun(fn func(context.Context, ExecutionContext) error, ctx context.Conte
 		}
 	}()
 	return fn(ctx, execCtx)
+}
+
+func callBuildPlan(installer Installer, task Task, server assets.Server, config json.RawMessage) (plan []StepDefinition, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("installer panic: %v", recovered)
+		}
+	}()
+	return installer.BuildPlan(task, server, config)
 }
 func isInstallerPanic(err error) bool {
 	return err != nil && strings.HasPrefix(err.Error(), "installer panic:")

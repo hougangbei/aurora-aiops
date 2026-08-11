@@ -14,6 +14,7 @@ import (
 	"path"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/hougangbei/aurora-aiops/server/internal/assets"
 	"github.com/hougangbei/aurora-aiops/server/internal/deployment"
@@ -67,10 +68,14 @@ func (i *AuroraInstaller) NormalizeConfiguration(raw json.RawMessage) (json.RawM
 	if err := decoder.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("invalid configuration")
 	}
+	var trailing any
+	if decoder.Decode(&trailing) != io.EOF {
+		return nil, fmt.Errorf("invalid configuration")
+	}
 	if cfg.BootstrapAdminUser == "" || !validUsername(cfg.BootstrapAdminUser) {
 		return nil, fmt.Errorf("invalid bootstrap admin user")
 	}
-	if len(cfg.BootstrapAdminPassword) < 12 || len(cfg.BootstrapAdminPassword) > 128 {
+	if len(cfg.BootstrapAdminPassword) < 12 || len(cfg.BootstrapAdminPassword) > 128 || strings.IndexFunc(cfg.BootstrapAdminPassword, unicode.IsControl) >= 0 {
 		return nil, fmt.Errorf("invalid bootstrap admin password")
 	}
 	// Canonical JSON is persisted encrypted by the deployment service; this
@@ -122,6 +127,11 @@ func (i *AuroraInstaller) BuildPlan(task deployment.Task, server assets.Server, 
 				return nil
 			}},
 		{ID: "resolve-release", Label: "解析发布资产", Percent: 30, Timeout: 2 * time.Minute, ValueKeys: []string{valueArchive, valueSHA256, valueSize},
+			Probe: func(_ context.Context, exec deployment.ExecutionContext) (bool, error) {
+				_, archiveOK := exec.Value(valueArchive)
+				_, digestOK := exec.Value(valueSHA256)
+				return archiveOK && digestOK, nil
+			},
 			Run: func(ctx context.Context, exec deployment.ExecutionContext) error {
 				artifact, err := i.resolver.Resolve(ctx, task.Version, server.Architecture)
 				if err != nil {
@@ -142,6 +152,17 @@ func (i *AuroraInstaller) BuildPlan(task deployment.Task, server assets.Server, 
 				return exec.SetValue(valueSize, fmt.Sprintf("%d", artifact.Size))
 			}},
 		{ID: "transfer-release", Label: "传输发布包", Percent: 40, Timeout: 10 * time.Minute, ValueKeys: []string{valueStaging},
+			Probe: func(ctx context.Context, exec deployment.ExecutionContext) (bool, error) {
+				archive, ok := exec.Value(valueStaging)
+				if !ok {
+					archive = staging
+				}
+				cmd, err := commandProbeStaging(server, archive)
+				if err != nil {
+					return false, err
+				}
+				return runProbe(ctx, exec, func() (string, error) { return cmd, nil })
+			},
 			Run: func(ctx context.Context, exec deployment.ExecutionContext) error {
 				artifact, err := i.resolver.Resolve(ctx, task.Version, server.Architecture)
 				if err != nil {
@@ -225,8 +246,26 @@ func (i *AuroraInstaller) BuildPlan(task deployment.Task, server assets.Server, 
 				return safeInstallerError(err)
 			}},
 		{ID: "activate-version", Label: "解包并原子切换版本", Percent: 65, Timeout: 5 * time.Minute,
+			Probe: func(ctx context.Context, exec deployment.ExecutionContext) (bool, error) {
+				release, err := releasePath(task.Version)
+				if err != nil {
+					return false, err
+				}
+				cmd, err := fixedCommand(server, "test \"$(readlink -f "+commandPath(pathCurrent)+")\" = "+commandPath(release))
+				if err != nil {
+					return false, err
+				}
+				return runProbe(ctx, exec, func() (string, error) { return cmd, nil })
+			},
 			Run: activationRun(server, task, staging)},
 		{ID: "configure-service", Label: "配置环境与 systemd", Percent: 78, Timeout: 3 * time.Minute,
+			Probe: func(ctx context.Context, exec deployment.ExecutionContext) (bool, error) {
+				cmd, err := fixedCommand(server, "test -s "+commandPath(pathConfig))
+				if err != nil {
+					return false, err
+				}
+				return runProbe(ctx, exec, func() (string, error) { return cmd, nil })
+			},
 			Run: configureRun(server, task, cfg, staging)},
 		{ID: "restart-service", Label: "启用并重启服务", Percent: 90, Timeout: 3 * time.Minute,
 			Probe: probeCommand(func() (string, error) { return fixedCommand(server, "systemctl is-active aurora-aiops.service") }),
@@ -335,7 +374,7 @@ func configureRun(server assets.Server, task deployment.Task, cfg auroraConfigur
 }
 
 func bootstrapEnv(cfg auroraConfiguration) (string, error) {
-	if !validUsername(cfg.BootstrapAdminUser) || len(cfg.BootstrapAdminPassword) < 12 || len(cfg.BootstrapAdminPassword) > 128 {
+	if !validUsername(cfg.BootstrapAdminUser) || len(cfg.BootstrapAdminPassword) < 12 || len(cfg.BootstrapAdminPassword) > 128 || strings.IndexFunc(cfg.BootstrapAdminPassword, unicode.IsControl) >= 0 {
 		return "", deployment.ErrInvalidInput
 	}
 	return "AURORA_AIOPS_BOOTSTRAP_ADMIN_USER=" + cfg.BootstrapAdminUser + "\nAURORA_AIOPS_BOOTSTRAP_ADMIN_PASSWORD=" + cfg.BootstrapAdminPassword + "\n", nil

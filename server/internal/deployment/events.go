@@ -185,3 +185,13 @@ func (s *EventStore) broadcast(ev Event) {
 		}
 	}
 }
+
+// Wake notifies live consumers that durable state may have changed. Worker
+// repository transitions write directly in their transaction, so the SSE
+// handler always replays SQLite after this best-effort wake-up.
+func (s *EventStore) Wake(taskID string) {
+	if s == nil || taskID == "" {
+		return
+	}
+	s.broadcast(Event{TaskID: taskID})
+}

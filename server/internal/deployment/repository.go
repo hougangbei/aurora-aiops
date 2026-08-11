@@ -268,17 +268,36 @@ func (r *Repository) FailStep(ctx context.Context, taskID, stepID, message strin
 	}, event)
 }
 func (r *Repository) RequestCancel(ctx context.Context, id string, event EventInput) error {
-	return r.taskTransition(ctx, id, TaskRunning, func(tx *sql.Tx, now time.Time) error {
-		res, err := tx.ExecContext(ctx, `UPDATE deployment_tasks SET cancel_requested=1,updated_at=? WHERE id=? AND status=? AND cancel_requested=0`, formatTime(now), id, TaskRunning)
-		if err != nil {
-			return err
-		}
-		n, _ := res.RowsAffected()
-		if n != 1 {
-			return ErrInvalidTransition
-		}
-		return nil
-	}, event)
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var status TaskStatus
+	if err := tx.QueryRowContext(ctx, `SELECT status FROM deployment_tasks WHERE id=?`, id).Scan(&status); errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	} else if err != nil {
+		return err
+	}
+	if status != TaskQueued && status != TaskRunning {
+		return ErrInvalidTransition
+	}
+	now := r.now()
+	res, err := tx.ExecContext(ctx, `UPDATE deployment_tasks SET cancel_requested=1,updated_at=? WHERE id=? AND status IN (?,?) AND cancel_requested=0`, formatTime(now), id, TaskQueued, TaskRunning)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n != 1 {
+		return ErrInvalidTransition
+	}
+	if err := appendEvent(ctx, tx, id, event, now); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return nil
 }
 func (r *Repository) Finish(ctx context.Context, id string, status TaskStatus, code, message string, event EventInput) error {
 	if !terminal(status) {
@@ -355,7 +374,7 @@ func (r *Repository) RecoverExpired(ctx context.Context) (int64, error) {
 	return recovered, nil
 }
 
-func (r *Repository) Retry(ctx context.Context, id, newID, actor string, _ []StepDefinition) (Task, error) {
+func (r *Repository) Retry(ctx context.Context, id, newID, actor string, definitions []StepDefinition) (Task, error) {
 	if newID == "" || actor == "" {
 		return Task{}, ErrInvalidInput
 	}
@@ -382,23 +401,40 @@ func (r *Repository) Retry(ctx context.Context, id, newID, actor string, _ []Ste
 		}
 		return Task{}, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT step_id,label,ordinal,percent FROM deployment_steps WHERE task_id=? ORDER BY ordinal`, id)
-	if err != nil {
-		return Task{}, err
-	}
-	for rows.Next() {
-		var sid, label string
-		var ordinal, percent int
-		if err := rows.Scan(&sid, &label, &ordinal, &percent); err != nil {
+	if len(definitions) == 0 {
+		rows, err := tx.QueryContext(ctx, `SELECT step_id,label,ordinal,percent FROM deployment_steps WHERE task_id=? ORDER BY ordinal`, id)
+		if err != nil {
 			return Task{}, err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO deployment_steps(task_id,step_id,label,ordinal,percent,status) VALUES(?,?,?,?,?,?)`, newID, sid, label, ordinal, percent, StepPending); err != nil {
+		for rows.Next() {
+			var sid, label string
+			var ordinal, percent int
+			if err := rows.Scan(&sid, &label, &ordinal, &percent); err != nil {
+				rows.Close()
+				return Task{}, err
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO deployment_steps(task_id,step_id,label,ordinal,percent,status) VALUES(?,?,?,?,?,?)`, newID, sid, label, ordinal, percent, StepPending); err != nil {
+				rows.Close()
+				return Task{}, err
+			}
+		}
+		if err := rows.Close(); err != nil {
 			return Task{}, err
 		}
-	}
-	rows.Close()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO deployment_task_values(task_id,value_key,value_text) SELECT ?,value_key,'' FROM deployment_task_values WHERE task_id=?`, newID, id); err != nil {
-		return Task{}, err
+		if _, err := tx.ExecContext(ctx, `INSERT INTO deployment_task_values(task_id,value_key,value_text) SELECT ?,value_key,'' FROM deployment_task_values WHERE task_id=?`, newID, id); err != nil {
+			return Task{}, err
+		}
+	} else {
+		for ordinal, definition := range definitions {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO deployment_steps(task_id,step_id,label,ordinal,percent,status) VALUES(?,?,?,?,?,?)`, newID, definition.ID, definition.Label, ordinal, definition.Percent, StepPending); err != nil {
+				return Task{}, err
+			}
+			for _, key := range definition.ValueKeys {
+				if _, err := tx.ExecContext(ctx, `INSERT INTO deployment_task_values(task_id,value_key,value_text) VALUES(?,?,?)`, newID, key, ""); err != nil {
+					return Task{}, err
+				}
+			}
+		}
 	}
 	if err := appendEvent(ctx, tx, newID, EventInput{Type: "queued"}, now); err != nil {
 		return Task{}, err

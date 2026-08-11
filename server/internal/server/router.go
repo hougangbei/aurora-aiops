@@ -23,6 +23,7 @@ import (
 	"github.com/hougangbei/aurora-aiops/server/internal/auth"
 	"github.com/hougangbei/aurora-aiops/server/internal/buildinfo"
 	"github.com/hougangbei/aurora-aiops/server/internal/cluster"
+	"github.com/hougangbei/aurora-aiops/server/internal/deployment"
 	"github.com/hougangbei/aurora-aiops/server/internal/experiment"
 	"github.com/hougangbei/aurora-aiops/server/internal/kube"
 	"github.com/hougangbei/aurora-aiops/server/internal/ptyx"
@@ -83,6 +84,7 @@ func newRouter(
 	remediationService *remediation.Service,
 	experimentRepo experiment.RunRepository,
 	info buildinfo.Info,
+	deploymentServices ...*deployment.Service,
 ) *gin.Engine {
 	_ = sharedClient
 
@@ -255,6 +257,9 @@ func newRouter(
 			registerClusterRoutes(authorized, probe, clusterService)
 			registerExperimentRoutes(authorized, experimentRepo)
 			registerAssetRoutes(authorized, assetService)
+			if len(deploymentServices) > 0 {
+				registerDeploymentRoutes(authorized, deploymentServices[0])
+			}
 
 			{
 				authorized.GET("/system/update-status", func(c *gin.Context) {

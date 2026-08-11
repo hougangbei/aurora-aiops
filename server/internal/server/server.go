@@ -15,6 +15,7 @@ import (
 	"github.com/hougangbei/aurora-aiops/server/internal/buildinfo"
 	"github.com/hougangbei/aurora-aiops/server/internal/cluster"
 	"github.com/hougangbei/aurora-aiops/server/internal/config"
+	"github.com/hougangbei/aurora-aiops/server/internal/deployment"
 	"github.com/hougangbei/aurora-aiops/server/internal/evidence"
 	"github.com/hougangbei/aurora-aiops/server/internal/experiment"
 	"github.com/hougangbei/aurora-aiops/server/internal/kube"
@@ -96,6 +97,14 @@ func Run(info buildinfo.Info) error {
 	if err != nil {
 		return fmt.Errorf("initialize asset service: %w", err)
 	}
+	var deploymentCipher deployment.SecretCipher
+	if len(cfg.Asset.EncryptionKey) == 32 {
+		deploymentCipher, _ = deployment.NewSecretCipher(cfg.Asset.EncryptionKey)
+	}
+	deploymentRepo := deployment.NewRepository(db, time.Now)
+	deploymentEvents := deployment.NewEventStore(db)
+	deploymentCatalog := &deployment.Catalog{}
+	deploymentService := deployment.NewService(deploymentRepo, deploymentCatalog, deploymentCipher, assetService.Get, auditRepo, deploymentEvents, time.Now)
 	snapshotStore := remediation.NewSnapshotStore(db)
 	executor := remediation.NewExecutor(
 		&remediation.KubeExecutorClient{Client: sharedClient.Kubernetes, RolloutTimeout: cfg.Cluster.Timeout},
@@ -131,6 +140,7 @@ func Run(info buildinfo.Info) error {
 		remediationService,
 		experiment.NewRunRepository(db),
 		info,
+		deploymentService,
 	)
 	return router.Run(cfg.HTTPAddr)
 }

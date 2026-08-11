@@ -240,7 +240,10 @@ func (i *KubernetesInstaller) saveCluster(ctx context.Context, exec deployment.E
 	if err != nil {
 		return deployment.ErrEncryptionUnavailable
 	}
-	health := `{"status":"ready","kubernetesVersion":"v1.35.6","ciliumVersion":"1.19.4"}`
+	// Keep the persisted summary deliberately coarse until the read-only
+	// inspection output is parsed; never claim the catalog version for an
+	// adopted cluster that may be running another supported patch level.
+	health := `{"status":"ready","source":"remote-readiness-check"}`
 	if err := i.repo.SaveManagedInstallation(ctx, server.ID, task.ProjectID, task.Version, task.ID, health, sealed); err != nil {
 		return err
 	}

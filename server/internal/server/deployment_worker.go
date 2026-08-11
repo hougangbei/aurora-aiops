@@ -27,6 +27,12 @@ func (unavailableDeploymentCipher) Seal(string, string, []byte) (deployment.Seal
 func (unavailableDeploymentCipher) Open(string, string, deployment.SealedSecret) ([]byte, error) {
 	return nil, deployment.ErrEncryptionUnavailable
 }
+func (unavailableDeploymentCipher) SealResource(string, string, string, []byte) (deployment.SealedSecret, error) {
+	return deployment.SealedSecret{}, deployment.ErrEncryptionUnavailable
+}
+func (unavailableDeploymentCipher) OpenResource(string, string, string, deployment.SealedSecret) ([]byte, error) {
+	return nil, deployment.ErrEncryptionUnavailable
+}
 
 // Keep the worker's narrow execution surface explicit even for the disabled
 // provider; this prevents accidental shell access through future adapters.

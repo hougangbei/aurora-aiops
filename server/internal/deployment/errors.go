@@ -1,6 +1,9 @@
 package deployment
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var (
 	ErrNotFound              = errors.New("deployment task not found")
@@ -12,4 +15,23 @@ var (
 	ErrEncryptionUnavailable = errors.New("deployment secret encryption is not configured")
 	ErrLeaseLost             = errors.New("deployment task lease lost")
 	ErrInvalidInput          = errors.New("invalid deployment input")
+	ErrAdoptionRequired      = errors.New("existing Kubernetes cluster requires adoption")
 )
+
+type AdoptionSummary struct {
+	Version string
+	Nodes   []string
+}
+
+type AdoptionRequiredError struct {
+	Summary AdoptionSummary
+}
+
+func (e *AdoptionRequiredError) Error() string {
+	if e == nil {
+		return ErrAdoptionRequired.Error()
+	}
+	return fmt.Sprintf("%s: version=%s nodes=%d", ErrAdoptionRequired, e.Summary.Version, len(e.Summary.Nodes))
+}
+
+func (e *AdoptionRequiredError) Unwrap() error { return ErrAdoptionRequired }

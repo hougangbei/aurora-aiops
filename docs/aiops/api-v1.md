@@ -166,6 +166,46 @@ Incident 状态迁移是严格白名单，非允许迁移返回 `INVALID_INCIDEN
 - 成功：HTTP 200，`data` 为完整 Incident。
 - 失败：ID 不存在 → 404 `INCIDENT_NOT_FOUND`。
 
+## 资产服务器 API
+
+资产盘点服务面向 Linux 目标机，采用免 Agent 的 SSH 采集方式。开发与安全边界见 [资产盘点后端基础开发参考](../architecture/asset-inventory-development.md)。以下 10 个端点均已实现，均要求有效 Session，并使用本页开头定义的统一信封 `{code, message, data}`。
+
+| 方法 | 路径 | Phase-1 RBAC | 说明 |
+| --- | --- | --- | --- |
+| `GET` | `/api/v1/assets/servers` | viewer / operator / admin | 服务器列表；空列表的 `data` 为 `[]`。 |
+| `POST` | `/api/v1/assets/servers` | admin | 新增服务器。 |
+| `GET` | `/api/v1/assets/servers/:id` | viewer / operator / admin | 查询单台服务器。 |
+| `PATCH` | `/api/v1/assets/servers/:id` | admin | 更新连接信息或凭据。 |
+| `DELETE` | `/api/v1/assets/servers/:id` | admin | 删除服务器，成功 `data` 为 `{ "deleted": true }`。 |
+| `POST` | `/api/v1/assets/servers/:id/test-connection` | operator / admin | 测试 SSH 连接和主机密钥。 |
+| `POST` | `/api/v1/assets/servers/:id/confirm-host-key` | admin | 显式确认探测到的主机密钥。 |
+| `POST` | `/api/v1/assets/servers/:id/collect` | operator / admin | 立即采集最新资产快照。 |
+| `GET` | `/api/v1/assets/servers/:id/snapshots/latest` | viewer / operator / admin | 查询最近一次成功快照。 |
+| `GET` | `/api/v1/assets/servers/:id/software` | viewer / operator / admin | 查询最近一次成功快照的软件列表；空列表为 `[]`。 |
+
+### 请求、响应与 SSH 行为
+
+- 创建请求使用 `name`、`address`、`username`、可选 `sshPort`、`credentialAuthType`（`password` 或 `private_key`）以及对应认证字段。凭据字段 `password`、`privateKey`、`passphrase` **只**在 `POST` / `PATCH` 写入请求中接收；省略 `sshPort` 或传入 `0` 时默认为 `22`。
+- 所有服务器响应仅暴露凭据元数据 `credentialAuthType` 与 `credentialConfigured`。响应绝不返回凭据明文、`credentialId`、`nonce`、`ciphertext`、`privateKey` 或 `passphrase`；主机密钥冲突中附带的 `server` 也遵守相同脱敏规则。
+- `POST /api/v1/assets/servers` 成功时返回 HTTP 201。若未要求 `testConnection`，服务器以 `pending` 状态创建，因此离线或暂不可达目标机可以先登记；随后可由有权限的操作者显式测试或采集。
+- 首次观察到未知主机密钥、或已确认主机密钥发生变化时，连接测试、采集或带 `testConnection` 的创建返回 HTTP 409 `SSH_HOST_KEY_CONFIRMATION_REQUIRED`。`data` 含观察到的 `fingerprint` 和已脱敏的 `server`（连接测试还含 `trusted`、`changed`）；管理员必须调用 confirm-host-key 并提交相同 `fingerprint` 后才会信任该密钥。
+
+### 主要错误码
+
+资产接口稳定使用以下错误码；未登录和越权仍分别为通用的 401 `UNAUTHORIZED` 与 403 `FORBIDDEN`。
+
+| HTTP | code | 说明 |
+| --- | --- | --- |
+| 400 | `INVALID_ARGUMENT` | JSON、字段或凭据校验失败。 |
+| 404 | `ASSET_NOT_FOUND` | 服务器或其最新快照不存在。 |
+| 409 | `ASSET_NAME_CONFLICT` | 服务器名称已存在。 |
+| 409 | `SSH_HOST_KEY_CONFIRMATION_REQUIRED` | 主机密钥未知或已变化，需显式确认。 |
+| 409 | `ASSET_ACTIVE_TASK` | 服务器存在活动部署任务，不能执行受限操作。 |
+| 503 | `ASSET_ENCRYPTION_UNAVAILABLE` | 未配置或无法使用资产凭据加密。 |
+| 500 | `ASSET_INTERNAL_ERROR` | 未分类的资产操作失败，不泄漏内部错误或凭据。 |
+
+`project_installations` 仅存在于存储 schema；installations 和 deployment tasks 的 HTTP API 尚未实现，属于下一阶段。Phase-1 也没有定时采集 scheduler，使用 `AURORA_AIOPS_ASSET_COLLECT_INTERVAL` 不会自动创建采集任务。
+
 ## 与 qd 旧接口的对应
 
 | aurora-aiops（Go） | qd（Node，只读参考） |

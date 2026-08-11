@@ -77,6 +77,7 @@ RBAC 资源可以按 ServiceAccount、Role、ClusterRole、Binding 维度查看�
 - Pod 事件、日志、`describe`、Web Terminal
 - 工作负载 `scale`、`restart`、`suspend`
 - 基于 GitHub Releases 的在线更新、回滚和重启
+- 免 Agent 的 Linux 服务器资产盘点：通过 SSH 管理服务器、确认主机密钥并采集最新软硬件快照
 
 ## AIOps 智能运维
 
@@ -92,6 +93,8 @@ RBAC 资源可以按 ServiceAccount、Role、ClusterRole、Binding 维度查看�
 
 - [单集群接入与平台认证架构](docs/architecture/single-cluster-access.md)
 - [AIOps API v1 文档](docs/aiops/api-v1.md)
+- [资产服务器 API（AIOps API v1）](docs/aiops/api-v1.md#资产服务器-api)
+- [资产盘点开发与安全边界](docs/architecture/asset-inventory-development.md)
 - [qd → aurora-aiops API 迁移矩阵](docs/aiops/migration-matrix.md)
 - [第三方依赖与授权结论](docs/third-party-and-ownership.md)
 
@@ -126,6 +129,22 @@ go run ./cmd/aurora-aiops
 2. `KUBECONFIG`（取第一个非空路径）
 3. 集群内 ServiceAccount 身份（运行在 Pod 内时自动启用，不挂载 kubeconfig）
 4. `~/.kube/config`（本地开发回退）
+
+### 资产盘点配置（可选）
+
+资产盘点面向 Linux 目标机，免 Agent，通过 SSH 使用 `password` 或 `private_key` 认证；未填写端口时使用默认 SSH 端口 `22`。可先保存尚不可达的服务器：未进行连接测试的新增服务器为 `pending`，不会因目标机离线而被拒绝；连接或采集前必须处理 SSH host-key confirmation，避免静默信任未知或变化的主机密钥。
+
+```bash
+# 仅作生成格式示例；请勿把输出提交到 git。
+openssl rand -base64 32
+
+export AURORA_AIOPS_ASSET_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
+export AURORA_AIOPS_ASSET_COLLECT_INTERVAL=15m
+```
+
+`AURORA_AIOPS_ASSET_ENCRYPTION_KEY` 必须由 Secret Manager 注入真实的 Base64 编码 32 字节密钥，绝不能写入仓库、示例配置或日志。`AURORA_AIOPS_ASSET_COLLECT_INTERVAL` 是正的 Go duration，默认 `15m`；Phase-1 尚未提供后台 scheduler，采集由资产 API/控制台显式触发。
+
+Phase-1 平台 RBAC 为：`viewer` 可读取资产；`operator` 可测试连接和采集；`admin` 可新增、更新、删除服务器及确认主机密钥。完整接口、错误码和安全契约见 [资产服务器 API](docs/aiops/api-v1.md#资产服务器-api)。
 
 ### 前端
 

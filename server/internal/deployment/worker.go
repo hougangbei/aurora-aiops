@@ -110,6 +110,9 @@ func (w *Worker) executeClaimed(ctx context.Context, task Task) error {
 	if err != nil {
 		return w.failTask(ctx, task, "TARGET_UNAVAILABLE", safeMessage(logger, err))
 	}
+	// Keep installer output redacted even when a provider forwards Log calls to
+	// an audit sink. Credentials never cross this wrapper in plaintext.
+	execCtx = &redactingExecutionContext{ExecutionContext: execCtx, logger: logger}
 	plan, err := installer.BuildPlan(task, server, config)
 	if err != nil {
 		return w.failTask(ctx, task, "PLAN_FAILED", safeMessage(logger, err))
@@ -193,6 +196,17 @@ func (w *Worker) executeClaimed(ctx context.Context, task Task) error {
 		return ErrLeaseLost
 	}
 	return w.repo.Finish(ctx, task.ID, TaskSucceeded, "", "", EventInput{Type: "finished", Owner: w.owner})
+}
+
+type redactingExecutionContext struct {
+	ExecutionContext
+	logger *RedactingLogger
+}
+
+func (c *redactingExecutionContext) Log(message string) {
+	redacted := c.logger.Redact(message)
+	c.logger.Info(redacted)
+	c.ExecutionContext.Log(redacted)
 }
 
 func (w *Worker) renewLease(ctx context.Context, taskID string, stop <-chan struct{}, lost chan<- struct{}, cancel context.CancelFunc) {
